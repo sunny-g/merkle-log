@@ -302,13 +302,9 @@ impl TreeID {
     /// assert_eq!(TreeID::subroots(10), &[TreeID::from(7), TreeID::from(17)]);
     /// ```
     pub fn subroots(size: u64) -> Vec<Self> {
-        let mut subroot_ids = Vec::new();
-        if size == 0 {
-            return subroot_ids;
-        }
-
         // write size as sum of decreasing powers of two
         // push each subtree root id whose length is a power of two
+        let mut subroot_ids = Vec::<Self>::new();
         let mut sum = 0u64;
         while sum < size {
             let subtree_size = prev_power_of_two(size - sum);

@@ -363,7 +363,6 @@ mod tests {
     use sha2::Sha256;
 
     type Log = MerkleLog<Sha256>;
-    static INITIAL_ENTRY: &str = "hello world";
 
     // reference trees
     // proving (2), providing [0]:
@@ -436,7 +435,7 @@ mod tests {
 
     async fn init() -> (MemoryStore, Log) {
         let mut store = MemoryStore::default();
-        let log = Log::new(&INITIAL_ENTRY, &mut store).await.unwrap();
+        let log = Log::new(&"hello world", &mut store).await.unwrap();
         (store, log)
     }
 }
