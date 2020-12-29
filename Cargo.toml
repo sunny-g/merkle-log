@@ -2,7 +2,7 @@
 name = "merkle-log"
 version = "0.0.2"
 authors = ["sunny-g <sunny.gonna@gmail.com>"]
-description = "An implementation of the \"Merkle Tree-Structured Log\" defined in the paper [Transparent Logs for Skeptical Clients](https://research.swtch.com/tlog)."
+description = "An implementation of the \"Merkle Tree-Structured Log\" defined in the paper \"Transparent Logs for Skeptical Clients.\" https://research.swtch.com/tlog"
 repository = "https://github.com/sunny-g/merkle-log"
 documentation = "https://docs.rs/merkle-log"
 keywords = ["merkle-tree", "crypto"]
