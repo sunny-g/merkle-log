@@ -1,11 +1,13 @@
 [package]
 name = "merkle-log"
-version = "0.0.1"
+version = "0.0.2"
 authors = ["sunny-g <sunny.gonna@gmail.com>"]
-description = "An implementation of the \"Merkle Tree-Structured Log\" defined in the paper Transparent Logs for Skeptical Clients. https://research.swtch.com/tlog"
+description = "An implementation of the \"Merkle Tree-Structured Log\" defined in the paper [Transparent Logs for Skeptical Clients](https://research.swtch.com/tlog)."
 repository = "https://github.com/sunny-g/merkle-log"
-keywords = ["merkle-tree", "cryptography"]
-license = "MIT"
+documentation = "https://docs.rs/merkle-log"
+keywords = ["merkle-tree", "crypto"]
+categories = ["data-structures"]
+license = "MIT OR Apache-2.0"
 edition = "2018"
 
 [dependencies]
