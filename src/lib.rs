@@ -17,9 +17,9 @@ use std::{collections::HashMap, marker::PhantomData};
 /// Type alias for nodes in the merkle tree.
 pub type Node = [u8; 32];
 
-/// Type alias for a [`BTreeMap`] containing leaf and tree nodes.
+/// Type alias for a [`HashMap`] containing leaf and tree nodes.
 ///
-/// [`BTreeMap`]: std::collections::BTreeMap
+/// [`HashMap`]: std::collections::HashMap
 pub type Proof = HashMap<TreeID, Node>;
 
 /// A [Merkle Tree-Structured Log] is a potentially unbalanced merkle tree

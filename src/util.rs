@@ -4,13 +4,15 @@ use std::collections::{BTreeMap, HashMap};
 /// Represents access to immutable merkle tree nodes.
 #[async_trait::async_trait]
 pub trait Store {
-    /// Gets an intermediate node by its [`TreeID`].
+    /// Gets an intermediate [`Node`] by its [`TreeID`].
     ///
+    /// [`Node`]: crate::Node
     /// [`TreeID`]: crate::TreeID
     async fn get(&self, id: &TreeID) -> Result<Node, Error>;
 
-    /// Stores an intermediate node by its [`TreeID`].
+    /// Stores an intermediate [`Node`] by its [`TreeID`].
     ///
+    /// [`Node`]: crate::Node
     /// [`TreeID`]: crate::TreeID
     async fn set(&mut self, id: TreeID, node: &Node) -> Result<(), Error>;
 }
@@ -22,13 +24,23 @@ pub type MemoryStore = BTreeMap<TreeID, Node>;
 
 #[async_trait::async_trait]
 impl Store for MemoryStore {
+    /// Delegates to [`BTreeMap::get`].
+    ///
     /// # Panics
     ///
-    /// Panics if there is no node stored at the given depth and offset.
+    /// Panics if there is no [`Node`] stored at the given depth and offset.
+    ///
+    /// [`Node`]: crate::Node
+    /// [`BTreeMap::get`]: std::collections::BTreeMap::get
+    #[inline]
     async fn get(&self, id: &TreeID) -> Result<Node, Error> {
         self.get(id).copied().ok_or(Error::MissingNode(*id))
     }
 
+    /// Delegates to [`BTreeMap::insert`].
+    ///
+    /// [`BTreeMap::insert`]: std::collections::BTreeMap::insert
+    #[inline]
     async fn set(&mut self, id: TreeID, node: &Node) -> Result<(), Error> {
         self.insert(id, *node);
         Ok(())
@@ -37,13 +49,23 @@ impl Store for MemoryStore {
 
 #[async_trait::async_trait]
 impl Store for HashMap<TreeID, Node> {
+    /// Delegates to [`HashMap::get`].
+    ///
     /// # Panics
     ///
-    /// Panics if there is no node stored at the given depth and offset.
+    /// Panics if there is no [`Node`] stored at the given depth and offset.
+    ///
+    /// [`Node`]: crate::Node
+    /// [`HashMap::get`]: std::collections::HashMap::get
+    #[inline]
     async fn get(&self, id: &TreeID) -> Result<Node, Error> {
         self.get(id).copied().ok_or(Error::MissingNode(*id))
     }
 
+    /// Delegates to [`HashMap::insert`].
+    ///
+    /// [`HashMap::insert`]: std::collections::HashMap::insert
+    #[inline]
     async fn set(&mut self, id: TreeID, node: &Node) -> Result<(), Error> {
         self.insert(id, *node);
         Ok(())
@@ -261,7 +283,7 @@ impl TreeID {
     }
 
     /// The root ids of the highest complete subtrees within a log of a given
-    /// `length`.
+    /// `size`.
     ///
     /// ## Examples
     /// ```rust
@@ -274,10 +296,7 @@ impl TreeID {
     /// assert_eq!(TreeID::subroots(4), &[TreeID::from(3)]);
     /// assert_eq!(TreeID::subroots(5), &[TreeID::from(3), TreeID::from(8)]);
     /// assert_eq!(TreeID::subroots(6), &[TreeID::from(3), TreeID::from(9)]);
-    /// assert_eq!(
-    ///     TreeID::subroots(7),
-    ///     &[TreeID::from(3), TreeID::from(9), TreeID::from(12)]
-    /// );
+    /// assert_eq!(TreeID::subroots(7), &[TreeID::from(3), TreeID::from(9), TreeID::from(12)]);
     /// assert_eq!(TreeID::subroots(8), &[TreeID::from(7)]);
     /// assert_eq!(TreeID::subroots(9), &[TreeID::from(7), TreeID::from(16)]);
     /// assert_eq!(TreeID::subroots(10), &[TreeID::from(7), TreeID::from(17)]);
