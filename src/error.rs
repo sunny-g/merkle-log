@@ -14,5 +14,5 @@ pub enum Error {
     ProofError(&'static str),
 
     #[error("custom error: {0}")]
-    Custom(#[from] anyhow::Error),
+    Custom(anyhow::Error),
 }

@@ -329,6 +329,11 @@ impl TreeID {
         size.next_power_of_two().trailing_zeros() as u8
     }
 
+    #[inline]
+    pub(crate) fn root_id(size: u64) -> Self {
+        Self::new(Self::root_height(size), 0)
+    }
+
     const fn is_even(&self) -> bool {
         (self.0 & 1) == 0
     }

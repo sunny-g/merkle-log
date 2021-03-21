@@ -95,7 +95,7 @@ impl<D: Digest> MerkleLog<D> {
     /// [`TreeID`]: crate::TreeID
     #[inline(always)]
     pub fn root_id(&self) -> TreeID {
-        TreeID::new(TreeID::root_height(self.size()), 0)
+        TreeID::root_id(self.size())
     }
 
     /// The unique [`TreeID`] of the current head.
@@ -123,7 +123,7 @@ impl<D: Digest> MerkleLog<D> {
         &self.root
     }
 
-    /// Creates a proof that a prior entry is contained within the current log.
+    /// Creates a proof that an entry is contained within the current log.
     pub async fn prove<S: Store>(
         &self,
         entry_index: u64,
@@ -160,6 +160,7 @@ impl<D: Digest> MerkleLog<D> {
                 proof.insert(*subroot_id, store.get(subroot_id).await?);
             }
         }
+
         Ok(proof)
     }
 
@@ -305,6 +306,7 @@ impl<D: Digest> MerkleLog<D> {
         for _ in 0..depth {
             let sibling_id = current_id.sibling();
             let sibling = store.get(&sibling_id).await?;
+
             current = match current_id.cmp(&sibling_id) {
                 Less => Self::node_hash(&current, &sibling),
                 Greater => Self::node_hash(&sibling, &current),
@@ -331,6 +333,7 @@ impl<D: Digest> MerkleLog<D> {
         for _ in 0..depth {
             let sibling_id = current_id.sibling();
             let sibling = proof.get(&sibling_id)?;
+
             current = match current_id.cmp(&sibling_id) {
                 Less => Self::node_hash(&current, sibling),
                 Greater => Self::node_hash(sibling, &current),
