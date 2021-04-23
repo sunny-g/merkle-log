@@ -15,12 +15,13 @@ use digest::Digest;
 use std::{collections::HashMap, marker::PhantomData};
 
 /// Type alias for nodes in the merkle tree.
-pub type Node = [u8; 32];
+pub trait Node: AsRef<[u8]> + Copy + Eq + Send + Sync {}
+impl<T: AsRef<[u8]> + Copy + Eq + Send + Sync> Node for T {}
 
 /// Type alias for a [`HashMap`] containing leaf and tree nodes.
 ///
 /// [`HashMap`]: std::collections::HashMap
-pub type Proof = HashMap<TreeID, Node>;
+pub type Proof<N> = HashMap<TreeID, N>;
 
 /// A [Merkle Tree-Structured Log] is a potentially unbalanced merkle tree
 /// containing the entries of an append-only log.
@@ -64,22 +65,26 @@ pub type Proof = HashMap<TreeID, Node>;
 /// [Merkle Tree-Structured Log]: https://research.swtch.com/tlog#merkle_tree-structured_log
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-pub struct MerkleLog<D: Digest> {
+pub struct MerkleLog<D: Digest, N = [u8; 32]> {
     /// The index of the log's head.
     index: u64,
     /// The digest of the log's head.
-    head: Node,
+    head: N,
     /// The merkle root of the tree in which this entry is the head.
-    root: Node,
+    root: N,
     /// The underlying digest used by this log.
     #[cfg_attr(feature = "serde", serde(skip))]
     _digest: PhantomData<D>,
 }
 
-impl<D: Digest> MerkleLog<D> {
+impl<D, N> MerkleLog<D, N>
+where
+    D: Digest,
+    N: Node + From<digest::Output<D>>,
+{
     /// Creates a new [`MerkleLog`] from the first log entry.
     #[inline]
-    pub async fn new<S: Store>(entry: impl AsRef<[u8]>, store: &mut S) -> Result<Self, Error> {
+    pub async fn new<S: Store<N>>(entry: impl AsRef<[u8]>, store: &mut S) -> Result<Self, Error> {
         let head = Self::leaf_hash(entry.as_ref());
         let log = Self {
             index: 0,
@@ -87,7 +92,7 @@ impl<D: Digest> MerkleLog<D> {
             root: head,
             _digest: PhantomData,
         };
-        store.set(log.head_id(), &log.head).await?;
+        store.set(log.head_id(), log.head).await?;
         Ok(log)
     }
 
@@ -113,23 +118,23 @@ impl<D: Digest> MerkleLog<D> {
 
     /// The digest of the current head.
     #[inline(always)]
-    pub fn head(&self) -> &Node {
+    pub fn head(&self) -> &N {
         &self.head
     }
 
     /// The merkle root of the log.
     #[inline(always)]
-    pub fn root(&self) -> &Node {
+    pub fn root(&self) -> &N {
         &self.root
     }
 
     /// Creates a proof that an entry is contained within the current log.
-    pub async fn prove<S: Store>(
+    pub async fn prove<S: Store<N>>(
         &self,
         entry_index: u64,
-        entry_node: &Node,
+        entry_node: &N,
         store: &S,
-    ) -> Result<Proof, Error> {
+    ) -> Result<Proof<N>, Error> {
         let mut proof = Proof::new();
         let size = self.size();
         let entry_id = TreeID::new(0, entry_index);
@@ -166,7 +171,7 @@ impl<D: Digest> MerkleLog<D> {
 
     /// Verifies a proof asserting that the`entry_node` exists at `entry_index`
     /// within the current log.
-    pub fn verify(&self, entry_index: u64, entry_node: &Node, proof: &Proof) -> bool {
+    pub fn verify(&self, entry_index: u64, entry_node: &N, proof: &Proof<N>) -> bool {
         let size = self.size();
         let entry_id = TreeID::new(0, entry_index);
 
@@ -214,11 +219,11 @@ impl<D: Digest> MerkleLog<D> {
     /// subtree containing the prefix and the full tree containing both the
     /// prefix and the head. Verifying these proofs should convince the
     /// verifier that both the prefix and the head belong to the same log.
-    pub async fn prove_prefix<S: Store>(
+    pub async fn prove_prefix<S: Store<N>>(
         &self,
         prefix: &Self,
         store: &S,
-    ) -> Result<(Proof, Proof), Error> {
+    ) -> Result<(Proof<N>, Proof<N>), Error> {
         let prefix_proof = prefix.prove(prefix.index, &prefix.head, store).await?;
         let head_proof = self.prove(self.index, &self.head, store).await?;
         Ok((prefix_proof, head_proof))
@@ -226,22 +231,27 @@ impl<D: Digest> MerkleLog<D> {
 
     /// Verifies the prefix and head proofs against a known prefix and the
     /// current log.
-    pub fn verify_prefix(&self, head_proof: &Proof, prefix: &Self, prefix_proof: &Proof) -> bool {
+    pub fn verify_prefix(
+        &self,
+        head_proof: &Proof<N>,
+        prefix: &Self,
+        prefix_proof: &Proof<N>,
+    ) -> bool {
         prefix.verify(prefix.index, &prefix.head, prefix_proof)
             && self.verify(self.index, &self.head, head_proof)
     }
 
     /// Appends a new entry to the log.
-    pub async fn append<S: Store>(
+    pub async fn append<S: Store<N>>(
         &mut self,
         entry: impl AsRef<[u8]>,
         store: &mut S,
-    ) -> Result<Node, Error> {
+    ) -> Result<N, Error> {
         let new_head = Self::leaf_hash(entry.as_ref());
         let new_index = self.index + 1;
         let new_size = new_index + 1;
         let new_head_id = TreeID::new(0, new_index);
-        store.set(new_head_id, &new_head).await?;
+        store.set(new_head_id, new_head).await?;
 
         let root_height = TreeID::root_height(new_size);
         let new_subroot_ids = TreeID::subroots(new_size);
@@ -260,7 +270,7 @@ impl<D: Digest> MerkleLog<D> {
                 };
                 current_id = current_id.parent();
                 current = Self::node_hash(&sibling, &current);
-                store.set(current_id, &current).await?;
+                store.set(current_id, current).await?;
             }
             current
         } else {
@@ -275,7 +285,7 @@ impl<D: Digest> MerkleLog<D> {
                     };
                     current_id = current_id.parent();
                     current = Self::node_hash(&sibling, &current);
-                    store.set(current_id, &current).await?;
+                    store.set(current_id, current).await?;
                 }
             }
 
@@ -292,13 +302,13 @@ impl<D: Digest> MerkleLog<D> {
         Ok(new_head)
     }
 
-    pub(crate) async fn tree_proof<S: Store>(
+    pub(crate) async fn tree_proof<S: Store<N>>(
         leaf_id: TreeID,
-        leaf_node: &Node,
+        leaf_node: &N,
         depth: u8,
-        mut proof: Proof,
+        mut proof: Proof<N>,
         store: &S,
-    ) -> Result<Proof, Error> {
+    ) -> Result<Proof<N>, Error> {
         use std::cmp::Ordering::*;
 
         let mut current_id = leaf_id;
@@ -322,10 +332,10 @@ impl<D: Digest> MerkleLog<D> {
 
     pub(crate) fn tree_hash(
         leaf_id: TreeID,
-        leaf_node: &Node,
+        leaf_node: &N,
         depth: u8,
-        proof: &Proof,
-    ) -> Option<Node> {
+        proof: &Proof<N>,
+    ) -> Option<N> {
         use std::cmp::Ordering::*;
 
         let mut current_id = leaf_id;
@@ -344,17 +354,12 @@ impl<D: Digest> MerkleLog<D> {
         Some(current)
     }
 
-    pub(crate) fn node_hash(left: &Node, right: &Node) -> Node {
-        let mut node = Node::default();
-        let digest = D::new().chain(left).chain(right).finalize();
-        node.copy_from_slice(digest.as_slice());
-        node
+    pub(crate) fn node_hash(left: &N, right: &N) -> N {
+        N::from(D::new().chain(left).chain(right).finalize())
     }
 
-    pub(crate) fn leaf_hash(entry: &[u8]) -> Node {
-        let mut node = Node::default();
-        node.copy_from_slice(D::digest(entry).as_slice());
-        node
+    pub(crate) fn leaf_hash(entry: &[u8]) -> N {
+        N::from(D::digest(entry))
     }
 }
 
@@ -365,24 +370,25 @@ mod tests {
     use super::*;
     use sha2::Sha256;
 
+    type Node = [u8; 32];
     type Log = MerkleLog<Sha256>;
 
     // reference trees
-    // proving (2), providing [0]:
-    //         3
+    // proving (2), providing [0] w/ static {1}:
+    //         x
     //    1      \
     // [0]  (2)   4
     //
-    // proving (2), providing [0, 5, 9]:
+    // proving (2), providing [0, 5, 9] w/ static {3, 9}:
     //                   7
     //         3                  x
     //     1       [5]      [9]      \
     // [0]  (2)   4   6    8   10    12
     //
-    // proving (26), providing [7, 19, 24]
+    // proving (26), providing [7, 19, 24] with static {7, 19}:
     //                               15
-    //              [7]
-    //       3               11             [19]
+    //              [7]                               \
+    //       3               11             [19]        \
     //   1       5       9       13      17      21      25
     // 0   2   4   6   8  10   12  14  16  18  20  22 [24](26)
 
@@ -436,7 +442,7 @@ mod tests {
         }
     }
 
-    async fn init() -> (MemoryStore, Log) {
+    async fn init() -> (MemoryStore<Node>, Log) {
         let mut store = MemoryStore::default();
         let log = Log::new(&"hello world", &mut store).await.unwrap();
         (store, log)

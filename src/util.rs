@@ -3,27 +3,27 @@ use std::collections::{BTreeMap, HashMap};
 
 /// Represents access to immutable merkle tree nodes.
 #[async_trait::async_trait]
-pub trait Store {
+pub trait Store<N: Node> {
     /// Gets an intermediate [`Node`] by its [`TreeID`].
     ///
     /// [`Node`]: crate::Node
     /// [`TreeID`]: crate::TreeID
-    async fn get(&self, id: &TreeID) -> Result<Node, Error>;
+    async fn get(&self, id: &TreeID) -> Result<N, Error>;
 
     /// Stores an intermediate [`Node`] by its [`TreeID`].
     ///
     /// [`Node`]: crate::Node
     /// [`TreeID`]: crate::TreeID
-    async fn set(&mut self, id: TreeID, node: &Node) -> Result<(), Error>;
+    async fn set(&mut self, id: TreeID, node: N) -> Result<(), Error>;
 }
 
 /// An in-memory store for the intermediate nodes of a [`MerkleLog`].
 ///
 /// [`MerkleLog`]: crate::MerkleLog
-pub type MemoryStore = BTreeMap<TreeID, Node>;
+pub type MemoryStore<N> = BTreeMap<TreeID, N>;
 
 #[async_trait::async_trait]
-impl Store for MemoryStore {
+impl<N: Node> Store<N> for MemoryStore<N> {
     /// Delegates to [`BTreeMap::get`].
     ///
     /// # Panics
@@ -33,7 +33,7 @@ impl Store for MemoryStore {
     /// [`Node`]: crate::Node
     /// [`BTreeMap::get`]: std::collections::BTreeMap::get
     #[inline]
-    async fn get(&self, id: &TreeID) -> Result<Node, Error> {
+    async fn get(&self, id: &TreeID) -> Result<N, Error> {
         self.get(id).copied().ok_or(Error::MissingNode(*id))
     }
 
@@ -41,14 +41,14 @@ impl Store for MemoryStore {
     ///
     /// [`BTreeMap::insert`]: std::collections::BTreeMap::insert
     #[inline]
-    async fn set(&mut self, id: TreeID, node: &Node) -> Result<(), Error> {
-        self.insert(id, *node);
+    async fn set(&mut self, id: TreeID, node: N) -> Result<(), Error> {
+        self.insert(id, node);
         Ok(())
     }
 }
 
 #[async_trait::async_trait]
-impl Store for HashMap<TreeID, Node> {
+impl<N: Node> Store<N> for HashMap<TreeID, N> {
     /// Delegates to [`HashMap::get`].
     ///
     /// # Panics
@@ -58,7 +58,7 @@ impl Store for HashMap<TreeID, Node> {
     /// [`Node`]: crate::Node
     /// [`HashMap::get`]: std::collections::HashMap::get
     #[inline]
-    async fn get(&self, id: &TreeID) -> Result<Node, Error> {
+    async fn get(&self, id: &TreeID) -> Result<N, Error> {
         self.get(id).copied().ok_or(Error::MissingNode(*id))
     }
 
@@ -66,8 +66,8 @@ impl Store for HashMap<TreeID, Node> {
     ///
     /// [`HashMap::insert`]: std::collections::HashMap::insert
     #[inline]
-    async fn set(&mut self, id: TreeID, node: &Node) -> Result<(), Error> {
-        self.insert(id, *node);
+    async fn set(&mut self, id: TreeID, node: N) -> Result<(), Error> {
+        self.insert(id, node);
         Ok(())
     }
 }
