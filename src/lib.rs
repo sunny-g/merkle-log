@@ -85,7 +85,7 @@ where
     /// Creates a new [`MerkleLog`] from the first log entry.
     #[inline]
     pub async fn new<S: Store<N>>(entry: impl AsRef<[u8]>, store: &mut S) -> Result<Self, Error> {
-        let head = Self::leaf_hash(entry.as_ref());
+        let head = Self::leaf_hash(entry);
         let log = Self {
             index: 0,
             head,
@@ -358,8 +358,9 @@ where
         N::from(D::new().chain(left).chain(right).finalize())
     }
 
-    pub(crate) fn leaf_hash(entry: &[u8]) -> N {
-        N::from(D::digest(entry))
+    /// Computes the hash of an entry.
+    pub fn leaf_hash(entry: impl AsRef<[u8]>) -> N {
+        N::from(D::digest(entry.as_ref()))
     }
 }
 
@@ -370,7 +371,6 @@ mod tests {
     use super::*;
     use sha2::Sha256;
 
-    type Node = [u8; 32];
     type Log = MerkleLog<Sha256>;
 
     // reference trees
@@ -442,7 +442,7 @@ mod tests {
         }
     }
 
-    async fn init() -> (MemoryStore<Node>, Log) {
+    async fn init() -> (MemoryStore, Log) {
         let mut store = MemoryStore::default();
         let log = Log::new(&"hello world", &mut store).await.unwrap();
         (store, log)

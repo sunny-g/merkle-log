@@ -12,7 +12,4 @@ pub enum Error {
 
     #[error("unable to provide/verify proof: {0}")]
     ProofError(&'static str),
-
-    #[error("custom error: {0}")]
-    Custom(anyhow::Error),
 }
