@@ -21,7 +21,7 @@ impl<T: AsRef<[u8]> + Copy + Eq + Send + Sync> Node for T {}
 /// Type alias for a [`HashMap`] containing leaf and tree nodes.
 ///
 /// [`HashMap`]: std::collections::HashMap
-pub type Proof<N> = HashMap<TreeID, N>;
+pub type Proof<N = [u8; 32]> = HashMap<TreeID, N>;
 
 /// A [Merkle Tree-Structured Log] is a potentially unbalanced merkle tree
 /// containing the entries of an append-only log.

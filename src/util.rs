@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, HashMap};
 
 /// Represents access to immutable merkle tree nodes.
 #[async_trait::async_trait]
-pub trait Store<N: Node> {
+pub trait Store<N: Node = [u8; 32]> {
     /// Gets an intermediate [`Node`] by its [`TreeID`].
     ///
     /// [`Node`]: crate::Node
@@ -20,7 +20,7 @@ pub trait Store<N: Node> {
 /// An in-memory store for the intermediate nodes of a [`MerkleLog`].
 ///
 /// [`MerkleLog`]: crate::MerkleLog
-pub type MemoryStore<N> = BTreeMap<TreeID, N>;
+pub type MemoryStore<N = [u8; 32]> = BTreeMap<TreeID, N>;
 
 #[async_trait::async_trait]
 impl<N: Node> Store<N> for MemoryStore<N> {
