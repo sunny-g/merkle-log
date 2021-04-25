@@ -364,7 +364,7 @@ where
     }
 }
 
-impl<D: Clone + Digest> Copy for MerkleLog<D> where digest::Output<D>: Copy {}
+impl<D: Clone + Digest, N: Node> Copy for MerkleLog<D, N> {}
 
 #[cfg(test)]
 mod tests {
@@ -382,7 +382,7 @@ mod tests {
     // proving (2), providing [0, 5, 9] w/ static {3, 9}:
     //                   7
     //         3                  x
-    //     1       [5]      [9]      \
+    //     1       [5]      [9]     \
     // [0]  (2)   4   6    8   10    12
     //
     // proving (26), providing [7, 19, 24] with static {7, 19}:
