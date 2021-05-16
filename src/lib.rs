@@ -12,7 +12,10 @@ pub use error::Error;
 pub use util::{MemoryStore, Store, TreeID};
 
 use digest::Digest;
-use std::{collections::HashMap, marker::PhantomData};
+use std::{
+    collections::{HashMap, HashSet},
+    marker::PhantomData,
+};
 
 /// Type alias for nodes in the merkle tree.
 pub trait Node: AsRef<[u8]> + Copy + Eq + Send + Sync {}
@@ -26,8 +29,7 @@ pub type Proof<N = [u8; 32]> = HashMap<TreeID, N>;
 /// A [Merkle Tree-Structured Log] is a potentially unbalanced merkle tree
 /// containing the entries of an append-only log.
 ///
-/// It extends a traditional merkle tree by allowing for:
-///
+/// It extends the functionality of a traditional merkle tree by allowing for:
 /// - continually appending new entries (even when the length of the log is not
 /// a power of two)
 /// - providing proofs that a previous log head is a prefix of (contained
@@ -38,28 +40,22 @@ pub type Proof<N = [u8; 32]> = HashMap<TreeID, N>;
 /// use merkle_log::{MemoryStore, MerkleLog, Store};
 /// use sha2::Sha256;
 ///
-/// #[async_std::main]
-/// async fn main() {
-///     let mut store = MemoryStore::default();
+/// let mut store = MemoryStore::default();
 ///
-///     // first entry
-///     let entry = b"hello";
-///     let mut log = MerkleLog::<Sha256>::new(&entry, &mut store).await.unwrap();
-///     let initial_head = *log.head();
-///     let initial_log = log.clone();
+/// // first entry
+/// let entry = b"hello";
+/// let mut log = MerkleLog::<Sha256>::new(&entry);
+/// let initial_head = *log.head();
+/// let initial_log = log.clone();
+/// store.set_leaf(log.head_id(), initial_head).unwrap();
 ///
-///     // second entry
-///     let entry = b"world";
-///     log.append(entry, &mut store).await.unwrap();
+/// // second entry
+/// let entry = b"world";
+/// log.append(entry, &mut store).unwrap();
 ///
-///     // prove existence of initial entry by its digest
-///     let proof = log.prove(0, &initial_head, &store).await.unwrap();
-///     assert!(log.verify(0, &initial_head, &proof));
-///
-///     // prove that head is a prefix of the current log
-///     let (prefix_proof, head_proof) = log.prove_prefix(&initial_log, &store).await.unwrap();
-///     assert!(log.verify_prefix(&head_proof, &initial_log, &prefix_proof));
-/// }
+/// // prove existence of initial entry by its digest
+/// let proof = log.prove(0, &store).unwrap();
+/// assert!(log.verify(0, &initial_head, &proof).unwrap());
 /// ```
 ///
 /// [Merkle Tree-Structured Log]: https://research.swtch.com/tlog#merkle_tree-structured_log
@@ -83,20 +79,21 @@ where
     N: Node + From<digest::Output<D>>,
 {
     /// Creates a new [`MerkleLog`] from the first log entry.
+    ///
+    /// [`MerkleLog`]: crate::MerkleLog
     #[inline]
-    pub async fn new<S: Store<N>>(entry: impl AsRef<[u8]>, store: &mut S) -> Result<Self, Error> {
+    pub fn new(entry: impl AsRef<[u8]>) -> Self {
         let head = Self::leaf_hash(entry);
-        let log = Self {
+        Self {
             index: 0,
             head,
             root: head,
             _digest: PhantomData,
-        };
-        store.set(log.head_id(), log.head).await?;
-        Ok(log)
+        }
     }
 
     /// The unique [`TreeID`] of the current tree root.
+    ///
     /// [`TreeID`]: crate::TreeID
     #[inline(always)]
     pub fn root_id(&self) -> TreeID {
@@ -104,6 +101,7 @@ where
     }
 
     /// The unique [`TreeID`] of the current head.
+    ///
     /// [`TreeID`]: crate::TreeID
     #[inline(always)]
     pub fn head_id(&self) -> TreeID {
@@ -116,26 +114,47 @@ where
         self.index + 1
     }
 
-    /// The digest of the current head.
+    /// The [`Node`] of the current head.
+    ///
+    /// [`Node`]: crate::Node
     #[inline(always)]
     pub fn head(&self) -> &N {
         &self.head
     }
 
-    /// The merkle root of the log.
+    /// The merkle root [`Node`] of the log.
+    ///
+    /// [`Node`]: crate::Node
     #[inline(always)]
     pub fn root(&self) -> &N {
         &self.root
     }
 
-    /// Creates a proof that an entry is contained within the current log.
-    pub async fn prove<S: Store<N>>(
-        &self,
-        entry_index: u64,
-        entry_node: &N,
-        store: &S,
-    ) -> Result<Proof<N>, Error> {
-        let mut proof = Proof::new();
+    /// Produces the [`TreeID`]s whose values are required to produce a valid
+    /// proof for a particular entry in the log.
+    ///
+    /// ## Examples
+    /// ```rust
+    /// use merkle_log::{MemoryStore, MerkleLog, Store, TreeID};
+    /// use sha2::Sha256;
+    ///
+    /// let mut store = MemoryStore::default();
+    ///
+    /// let entry = b"hello";
+    /// let mut log = MerkleLog::<Sha256>::new(&entry);
+    /// store.set_leaf(log.head_id(), *log.head()).unwrap();
+    ///
+    /// log.append(&entry, &mut store).unwrap(); // size 2
+    /// log.append(&entry, &mut store).unwrap(); // size 3
+    /// assert_eq!(log.proving_ids(1).unwrap(), [TreeID::from(0), TreeID::from(4)].iter().copied().collect());
+    ///
+    /// log.append(&entry, &mut store).unwrap(); // size 4
+    /// assert_eq!(log.proving_ids(1).unwrap(), [TreeID::from(0), TreeID::from(5)].iter().copied().collect());
+    /// assert_eq!(log.proving_ids(2).unwrap(), [TreeID::from(1), TreeID::from(6)].iter().copied().collect());
+    /// ```
+    ///
+    /// [`TreeID`]: crate::TreeID
+    pub fn proving_ids(&self, entry_index: u64) -> Result<HashSet<TreeID>, Error> {
         let size = self.size();
         let entry_id = TreeID::new(0, entry_index);
 
@@ -143,65 +162,74 @@ where
             return Err(Error::ProofError(
                 "proving index greater than log head index",
             ));
-        } else if size == 1 {
-            return Ok(proof);
+        } else if self.index == 0 {
+            return Ok(HashSet::default());
         }
 
         // if balanced, use traditional merkle tree proof creation
+        let root_depth = self.root_id().depth();
         if size.is_power_of_two() {
-            return Self::tree_proof(entry_id, entry_node, self.root_id().depth(), proof, store)
-                .await;
+            return Ok(entry_id.proving_ids(root_depth, None));
         }
 
         // otherwise, compute subroots, pushing all but the head
-        let subroot_ids = TreeID::subroots(size);
-        for subroot_id in subroot_ids.iter() {
-            if subroot_id == &self.head_id() {
-                continue;
-            } else if subroot_id.spans(&entry_id) {
-                proof = Self::tree_proof(entry_id, entry_node, subroot_id.depth(), proof, store)
-                    .await?;
+        let subroots = TreeID::subroots(size).ok_or(Error::Overflow)?;
+        let mut tree_ids = HashSet::with_capacity(root_depth as usize + subroots.len());
+        for subroot_id in subroots.iter() {
+            if subroot_id.spans(&entry_id) {
+                tree_ids = entry_id.proving_ids(subroot_id.depth(), Some(tree_ids));
             } else {
-                proof.insert(*subroot_id, store.get(subroot_id).await?);
+                tree_ids.insert(*subroot_id);
             }
         }
 
-        Ok(proof)
+        Ok(tree_ids)
     }
 
-    /// Verifies a proof asserting that the`entry_node` exists at `entry_index`
+    /// Creates a proof that an entry is contained within the current log.
+    pub fn prove<S: Store<N>>(&self, entry_index: u64, store: &S) -> Result<Proof<N>, Error> {
+        Ok(store.get_many(self.proving_ids(entry_index)?.iter())?)
+    }
+
+    /// Verifies a proof asserting that the `entry_node` exists at `entry_index`
     /// within the current log.
-    pub fn verify(&self, entry_index: u64, entry_node: &N, proof: &Proof<N>) -> bool {
+    pub fn verify(
+        &self,
+        entry_index: u64,
+        entry_node: &N,
+        proof: &Proof<N>,
+    ) -> Result<bool, Error> {
         let size = self.size();
         let entry_id = TreeID::new(0, entry_index);
 
         if entry_index > self.index {
             // check if out-of-bounds
-            return false;
+            return Err(Error::OutOfBounds);
         } else if size == 1 {
             // verifying a length-1 log
             // index should be 0 and entry_node should be the log's root
-            return entry_index == self.index && entry_node == &self.root;
+            return Ok(entry_index == self.index
+                && entry_node == &self.head
+                && entry_node == &self.root);
         }
 
         // if balanced, use traditional merkle tree verification
         if size.is_power_of_two() {
-            return Self::tree_hash(entry_id, entry_node, self.root_id().depth(), proof)
-                .filter(|root| root == &self.root)
-                .is_some();
+            let root = Self::tree_hash(entry_id, entry_node, self.root_id().depth(), proof, None)?;
+            return Ok(root == self.root);
         }
 
         // otherwise
         // compute subroots, join them from right to left
-        let subroot_ids = TreeID::subroots(size);
+        let subroot_ids = TreeID::subroots(size).ok_or(Error::Overflow)?;
         let mut subroots = subroot_ids
             .iter()
             .filter_map(|subroot_id| match subroot_id {
-                _ if subroot_id == &self.head_id() => Some(self.head),
+                _ if self.head_id() == *subroot_id => Some(self.head),
                 _ if subroot_id.spans(&entry_id) => {
-                    Self::tree_hash(entry_id, entry_node, subroot_id.depth(), proof)
+                    Self::tree_hash(entry_id, entry_node, subroot_id.depth(), proof, None).ok()
                 }
-                _ => proof.get(&subroot_id).copied(),
+                _ => proof.get(subroot_id).copied(),
             })
             .rev();
 
@@ -209,113 +237,111 @@ where
         let root = subroots.fold(first_subroot, |root, subroot| {
             root.map(|root| Self::node_hash(&subroot, &root))
         });
-        root == Some(self.root)
+
+        Ok(root == Some(self.root))
     }
 
-    /// Creates a proof that a prior log head is a prefix of the current log,
-    /// as well as a proof that the current head is within the same log.
+    /// Produces the [`TreeID`]s whose values are required to append the next
+    /// entry to log.
+    /// See [`TreeID::appending_ids`] for additional doctests.
     ///
-    /// This involves producing a set of nodes, some of which are common to the
-    /// subtree containing the prefix and the full tree containing both the
-    /// prefix and the head. Verifying these proofs should convince the
-    /// verifier that both the prefix and the head belong to the same log.
-    pub async fn prove_prefix<S: Store<N>>(
-        &self,
-        prefix: &Self,
-        store: &S,
-    ) -> Result<(Proof<N>, Proof<N>), Error> {
-        let prefix_proof = prefix.prove(prefix.index, &prefix.head, store).await?;
-        let head_proof = self.prove(self.index, &self.head, store).await?;
-        Ok((prefix_proof, head_proof))
+    /// ## Examples
+    /// ```rust
+    /// use merkle_log::{MemoryStore, MerkleLog, Store, TreeID};
+    /// use sha2::Sha256;
+    ///
+    /// let mut store = MemoryStore::default();
+    ///
+    /// let entry = b"hello";
+    /// let mut log = MerkleLog::<Sha256>::new(&entry);
+    /// store.set_leaf(log.head_id(), *log.head()).unwrap();
+    /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(0)]);
+    ///
+    /// log.append(&entry, &mut store).unwrap(); // size 2
+    /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(1)]);
+    ///
+    /// log.append(&entry, &mut store).unwrap(); // size 3
+    /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(1), TreeID::from(4)]);
+    ///
+    /// log.append(&entry, &mut store).unwrap(); // size 4
+    /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(3)]);
+    /// ```
+    ///
+    /// [`TreeID`]: crate::TreeID
+    pub fn appending_ids(&self) -> Result<Vec<TreeID>, Error> {
+        TreeID::appending_ids(self.size() + 1).ok_or(Error::Overflow)
     }
 
-    /// Verifies the prefix and head proofs against a known prefix and the
-    /// current log.
-    pub fn verify_prefix(
-        &self,
-        head_proof: &Proof<N>,
-        prefix: &Self,
-        prefix_proof: &Proof<N>,
-    ) -> bool {
-        prefix.verify(prefix.index, &prefix.head, prefix_proof)
-            && self.verify(self.index, &self.head, head_proof)
-    }
-
-    /// Appends a new entry to the log.
-    pub async fn append<S: Store<N>>(
+    /// Appends a new entry to the log, returning the new permanent [`Node`]s to
+    /// store.
+    ///
+    /// ## Examples
+    /// ```rust
+    /// use merkle_log::{MerkleLog, MemoryStore, Store, TreeID};
+    /// use sha2::Sha256;
+    ///
+    /// let mut store = MemoryStore::default();
+    ///
+    /// let mut entry = b"hello";
+    /// let mut log = MerkleLog::<Sha256>::new(&entry);
+    /// store.set_leaf(log.head_id(), *log.head()).unwrap();
+    /// assert_eq!(log.size(), 1);
+    /// assert_eq!(log.head_id(), TreeID::from(0));
+    ///
+    /// let new_nodes = log.append(b"world", &mut store).unwrap();
+    /// assert_eq!(log.size(), 2);
+    /// assert_eq!(log.head_id(), TreeID::from(2));
+    /// assert_eq!(new_nodes.get(&TreeID::from(1)).unwrap(), log.root());
+    /// ```
+    ///
+    /// [`Node`]: crate::Node
+    pub fn append<S: Store<N>>(
         &mut self,
         entry: impl AsRef<[u8]>,
         store: &mut S,
-    ) -> Result<N, Error> {
-        let new_head = Self::leaf_hash(entry.as_ref());
+    ) -> Result<HashMap<TreeID, N>, Error> {
         let new_index = self.index + 1;
-        let new_size = new_index + 1;
         let new_head_id = TreeID::new(0, new_index);
-        store.set(new_head_id, new_head).await?;
+        let new_head = Self::leaf_hash(entry.as_ref());
 
-        let root_height = TreeID::root_height(new_size);
-        let new_subroot_ids = TreeID::subroots(new_size);
-        let last_subroot_id = new_subroot_ids.last().unwrap();
-
-        let mut current_id = new_head_id;
+        let appending_ids = self.appending_ids()?;
         let mut current = new_head;
-        let new_root = if new_subroot_ids.len() == 1 {
-            // addition will complete the tree
-            // store every parent up to root
-            // then compute, store and return root
-            for i in 0..root_height {
-                let sibling = match i {
-                    0 => self.head,
-                    _ => store.get(&current_id.sibling()).await?,
-                };
-                current_id = current_id.parent();
-                current = Self::node_hash(&sibling, &current);
-                store.set(current_id, current).await?;
-            }
-            current
-        } else {
-            if last_subroot_id != &new_head_id {
-                // addition will complete a subtree
-                // store every parent up to subroot
-                // then compute and return root
-                for i in 0..last_subroot_id.depth() {
-                    let sibling = match i {
-                        0 => self.head,
-                        _ => store.get(&current_id.sibling()).await?,
-                    };
-                    current_id = current_id.parent();
-                    current = Self::node_hash(&sibling, &current);
-                    store.set(current_id, current).await?;
-                }
-            }
+        let mut current_id = new_head_id;
+        let mut new_nodes = HashMap::with_capacity(appending_ids.len());
 
-            for subroot_id in new_subroot_ids.iter().rev().skip(1) {
-                let subroot = store.get(&subroot_id).await?;
-                current = Self::node_hash(&subroot, &current);
+        for subroot_id in appending_ids.iter().rev() {
+            let subroot = store.get(&subroot_id)?;
+            current = Self::node_hash(&subroot, &current);
+            current_id = current_id.parent();
+
+            if current_id == subroot_id.parent() {
+                new_nodes.insert(current_id, current);
             }
-            current
-        };
+        }
+
+        new_nodes.insert(new_head_id, new_head);
+        store.set_many(new_nodes.iter().map(|(k, v)| (*k, *v)))?;
 
         self.index = new_index;
         self.head = new_head;
-        self.root = new_root;
-        Ok(new_head)
+        self.root = current;
+        Ok(new_nodes)
     }
 
-    pub(crate) async fn tree_proof<S: Store<N>>(
+    pub(crate) fn tree_hash<S: Store<N>>(
         leaf_id: TreeID,
         leaf_node: &N,
         depth: u8,
-        mut proof: Proof<N>,
-        store: &S,
-    ) -> Result<Proof<N>, Error> {
+        in_store: &S,
+        mut out_store: Option<&mut HashMap<TreeID, N>>,
+    ) -> Result<N, Error> {
         use std::cmp::Ordering::*;
 
         let mut current_id = leaf_id;
         let mut current = *leaf_node;
         for _ in 0..depth {
             let sibling_id = current_id.sibling();
-            let sibling = store.get(&sibling_id).await?;
+            let sibling = in_store.get(&sibling_id)?;
 
             current = match current_id.cmp(&sibling_id) {
                 Less => Self::node_hash(&current, &sibling),
@@ -324,34 +350,12 @@ where
             };
             current_id = current_id.parent();
 
-            proof.insert(sibling_id, sibling);
+            if let Some(ref mut out_store) = out_store {
+                out_store.insert(current_id, current);
+            }
         }
 
-        Ok(proof)
-    }
-
-    pub(crate) fn tree_hash(
-        leaf_id: TreeID,
-        leaf_node: &N,
-        depth: u8,
-        proof: &Proof<N>,
-    ) -> Option<N> {
-        use std::cmp::Ordering::*;
-
-        let mut current_id = leaf_id;
-        let mut current = *leaf_node;
-        for _ in 0..depth {
-            let sibling_id = current_id.sibling();
-            let sibling = proof.get(&sibling_id)?;
-
-            current = match current_id.cmp(&sibling_id) {
-                Less => Self::node_hash(&current, sibling),
-                Greater => Self::node_hash(sibling, &current),
-                _ => unreachable!(),
-            };
-            current_id = current_id.parent();
-        }
-        Some(current)
+        Ok(current)
     }
 
     pub(crate) fn node_hash(left: &N, right: &N) -> N {
@@ -359,7 +363,7 @@ where
     }
 
     /// Computes the hash of an entry.
-    pub fn leaf_hash(entry: impl AsRef<[u8]>) -> N {
+    pub(crate) fn leaf_hash(entry: impl AsRef<[u8]>) -> N {
         N::from(D::digest(entry.as_ref()))
     }
 }
@@ -371,7 +375,7 @@ mod tests {
     use super::*;
     use sha2::Sha256;
 
-    type Log = MerkleLog<Sha256>;
+    type TestLog = MerkleLog<Sha256>;
 
     // reference trees
     // proving (2), providing [0] w/ static {1}:
@@ -392,59 +396,42 @@ mod tests {
     //   1       5       9       13      17      21      25
     // 0   2   4   6   8  10   12  14  16  18  20  22 [24](26)
 
-    #[async_std::test]
-    async fn creation() {
-        let (_, log) = init().await;
+    fn new() -> (MemoryStore, TestLog) {
+        let mut store = MemoryStore::default();
+        let log = TestLog::new(&"hello world");
+        store.set_leaf(log.head_id(), *log.head()).unwrap();
+        (store, log)
+    }
+
+    #[test]
+    fn creation() {
+        let (_, log) = new();
         assert_eq!(log.head_id(), TreeID::from(0));
         assert_eq!(log.size(), 1);
         assert_eq!(log.head(), log.root());
     }
 
-    #[async_std::test]
-    async fn prove_and_verify() {
-        let (mut store, mut log) = init().await;
-        let proof = log.prove(0, log.head(), &store).await.unwrap();
-        assert!(log.verify(0, log.head(), &proof));
+    #[test]
+    fn prove_and_verify() {
+        let (mut store, mut log) = new();
+        let proof = log.prove(0, &store).unwrap();
+        assert!(log.verify(0, log.head(), &proof).expect("failed to verify"));
 
-        for idx in 1..=64u64 {
+        for idx in 1..=128u64 {
             let entry = format!("hello world x{}", idx);
-            let head = log.append(&entry, &mut store).await.unwrap();
+            let _ = log.append(&entry, &mut store).expect(&format!(
+                "should be able to append \"{}\" at idx {}",
+                &entry, idx
+            ));
             assert_eq!(log.size(), idx + 1);
-            assert_eq!(log.head(), &head);
 
-            let proof = log.prove(idx, &head, &store).await.unwrap();
+            let proof = log.prove(idx, &store).unwrap();
             assert!(
-                log.verify(idx, &head, &proof),
+                log.verify(idx, log.head(), &proof)
+                    .expect("failed to verify"),
                 "failed verification for log of length {}",
                 idx + 1
             );
         }
-    }
-
-    #[async_std::test]
-    async fn prove_and_verify_prefix() {
-        let (mut store, mut log) = init().await;
-        let initial_log = log.clone();
-
-        for idx in 1..=64u64 {
-            let entry = format!("hello world x{}", idx);
-            let head = log.append(&entry, &mut store).await.unwrap();
-            assert_eq!(log.size(), idx + 1);
-            assert_eq!(log.head(), &head);
-
-            let (prefix_proof, mut head_proof) =
-                log.prove_prefix(&initial_log, &store).await.unwrap();
-            assert!(
-                log.verify_prefix(&mut head_proof, &initial_log, &prefix_proof),
-                "failed prefix verification for log of length {}",
-                idx + 1
-            );
-        }
-    }
-
-    async fn init() -> (MemoryStore, Log) {
-        let mut store = MemoryStore::default();
-        let log = Log::new(&"hello world", &mut store).await.unwrap();
-        (store, log)
     }
 }
