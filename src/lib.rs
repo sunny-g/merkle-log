@@ -92,14 +92,6 @@ where
         }
     }
 
-    /// The unique [`TreeID`] of the current tree root.
-    ///
-    /// [`TreeID`]: crate::TreeID
-    #[inline(always)]
-    pub fn root_id(&self) -> TreeID {
-        TreeID::root_id(self.size())
-    }
-
     /// The unique [`TreeID`] of the current head.
     ///
     /// [`TreeID`]: crate::TreeID
@@ -128,6 +120,14 @@ where
     #[inline(always)]
     pub fn root(&self) -> &N {
         &self.root
+    }
+
+    /// The unique [`TreeID`] of the current tree root.
+    ///
+    /// [`TreeID`]: crate::TreeID
+    #[inline(always)]
+    pub fn root_depth(&self) -> u8 {
+        TreeID::root_depth(self.size())
     }
 
     /// Produces the [`TreeID`]s whose values are required to produce a valid
@@ -167,7 +167,7 @@ where
         }
 
         // if balanced, use traditional merkle tree proof creation
-        let root_depth = self.root_id().depth();
+        let root_depth = self.root_depth();
         if size.is_power_of_two() {
             return Ok(entry_id.proving_ids(root_depth, None));
         }
@@ -215,7 +215,7 @@ where
 
         // if balanced, use traditional merkle tree verification
         if size.is_power_of_two() {
-            let root = Self::tree_hash(entry_id, entry_node, self.root_id().depth(), proof, None)?;
+            let root = Self::tree_hash(entry_id, entry_node, self.root_depth(), proof, None)?;
             return Ok(root == self.root);
         }
 
