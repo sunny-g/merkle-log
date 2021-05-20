@@ -497,11 +497,6 @@ impl TreeID {
     pub(crate) const fn root_depth(size: u64) -> u8 {
         size.next_power_of_two().trailing_zeros() as u8
     }
-
-    #[inline]
-    pub(crate) const fn root_id(size: u64) -> Self {
-        Self::new(Self::root_depth(size), 0)
-    }
 }
 
 const fn prev_power_of_two(n: u64) -> u64 {

@@ -1,5 +1,5 @@
-//! An implementation of the "Merkle Tree-Structured Log" defined in the paper
-//! [Transparent Logs for Skeptical Clients].
+//! An implementation of the "Merkle Tree-Structured Log" defined in the blog
+//! post [Transparent Logs for Skeptical Clients].
 //!
 //! [Transparent Logs for Skeptical Clients]: https://research.swtch.com/tlog
 
@@ -18,8 +18,8 @@ use std::{
 };
 
 /// Type alias for nodes in the merkle tree.
-pub trait Node: AsRef<[u8]> + Copy + Eq + Send + Sync {}
-impl<T: AsRef<[u8]> + Copy + Eq + Send + Sync> Node for T {}
+pub trait Node: AsRef<[u8]> + Copy + Eq {}
+impl<T: AsRef<[u8]> + Copy + Eq> Node for T {}
 
 /// Type alias for a [`HashMap`] containing leaf and tree nodes.
 ///
@@ -188,7 +188,7 @@ where
 
     /// Creates a proof that an entry is contained within the current log.
     pub fn prove<S: Store<N>>(&self, entry_index: u64, store: &S) -> Result<Proof<N>, Error> {
-        Ok(store.get_many(self.proving_ids(entry_index)?.iter())?)
+        store.get_many(self.proving_ids(entry_index)?.iter())
     }
 
     /// Verifies a proof asserting that the `entry_node` exists at `entry_index`
