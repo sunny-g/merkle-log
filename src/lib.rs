@@ -51,7 +51,8 @@ pub type Proof<N = [u8; 32]> = HashMap<TreeID, N>;
 ///
 /// // second entry
 /// let entry = b"world";
-/// log.append(entry, &mut store).unwrap();
+/// let new_nodes = log.append(entry, &mut store).unwrap();
+/// store.set_many(new_nodes.into_iter()).unwrap();
 ///
 /// // prove existence of initial entry by its digest
 /// let proof = log.prove(0, &store).unwrap();
@@ -144,11 +145,14 @@ where
     /// let mut log = MerkleLog::<Sha256>::new(&entry);
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
     ///
-    /// log.append(&entry, &mut store).unwrap(); // size 2
-    /// log.append(&entry, &mut store).unwrap(); // size 3
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 2
+    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 3
+    /// store.set_many(new_nodes.into_iter()).unwrap();
     /// assert_eq!(log.proving_ids(1).unwrap(), [TreeID::from(0), TreeID::from(4)].iter().copied().collect());
     ///
-    /// log.append(&entry, &mut store).unwrap(); // size 4
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 4
+    /// store.set_many(new_nodes.into_iter()).unwrap();
     /// assert_eq!(log.proving_ids(1).unwrap(), [TreeID::from(0), TreeID::from(5)].iter().copied().collect());
     /// assert_eq!(log.proving_ids(2).unwrap(), [TreeID::from(1), TreeID::from(6)].iter().copied().collect());
     /// ```
@@ -257,13 +261,16 @@ where
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
     /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(0)]);
     ///
-    /// log.append(&entry, &mut store).unwrap(); // size 2
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 2
+    /// store.set_many(new_nodes.into_iter()).unwrap();
     /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(1)]);
     ///
-    /// log.append(&entry, &mut store).unwrap(); // size 3
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 3
+    /// store.set_many(new_nodes.into_iter()).unwrap();
     /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(1), TreeID::from(4)]);
     ///
-    /// log.append(&entry, &mut store).unwrap(); // size 4
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 4
+    /// store.set_many(new_nodes.into_iter()).unwrap();
     /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(3)]);
     /// ```
     ///
@@ -298,7 +305,7 @@ where
     pub fn append<S: Store<N>>(
         &mut self,
         entry: impl AsRef<[u8]>,
-        store: &mut S,
+        store: &S,
     ) -> Result<HashMap<TreeID, N>, Error> {
         let new_index = self.index + 1;
         let new_head_id = TreeID::new(0, new_index);
@@ -320,7 +327,6 @@ where
         }
 
         new_nodes.insert(new_head_id, new_head);
-        store.set_many(new_nodes.iter().map(|(k, v)| (*k, *v)))?;
 
         self.index = new_index;
         self.head = new_head;
@@ -419,10 +425,11 @@ mod tests {
 
         for idx in 1..=128u64 {
             let entry = format!("hello world x{}", idx);
-            let _ = log.append(&entry, &mut store).expect(&format!(
+            let new_nodes = log.append(&entry, &mut store).expect(&format!(
                 "should be able to append \"{}\" at idx {}",
                 &entry, idx
             ));
+            store.set_many(new_nodes.into_iter()).unwrap();
             assert_eq!(log.size(), idx + 1);
 
             let proof = log.prove(idx, &store).unwrap();
