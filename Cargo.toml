@@ -9,14 +9,22 @@ keywords = ["merkle-tree", "crypto"]
 categories = ["cryptography", "data-structures"]
 license = "MIT OR Apache-2.0"
 edition = "2018"
+rust-version = "1.60"
 
 [dependencies]
-digest = "0.9"
-serde = { version = "1.0", features = ["derive"], optional = true }
+core2 = { version = "0.4", default-features = false }
 thiserror = "1.0"
 
+# optional
+digest = { version = "0.10", optional = true }
+serde = { version = "1.0", default-features = false, optional = true, features = ["derive"] }
+
 [dev-dependencies]
-sha2 = "0.9"
+digest = { version = "0.10", features = ["std"] }
+sha2 = "0.10"
 
 [features]
-default = ["serde"]
+default = ["serde", "std"]
+std = ["core2/std", "digest?/std", "serde?/std"]
+
+[workspace]
