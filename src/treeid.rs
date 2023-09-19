@@ -609,9 +609,9 @@ impl TreeID {
     /// use std::collections::BTreeSet;
     /// use merkle_log::*;
     ///
-    /// assert_eq!(TreeID::from(0).proving_ids(0).collect::<TreeIDs>(), &[]);
-    /// assert_eq!(TreeID::from(0).proving_ids(1).collect::<TreeIDs>(), &[TreeID::from(2)]);
-    /// assert_eq!(TreeID::from(0).proving_ids(2).collect::<TreeIDs>(), &[TreeID::from(2), TreeID::from(5)]);
+    /// assert_eq!(TreeID::from(0).proving_ids(0).collect::<Vec<_>>(), &[]);
+    /// assert_eq!(TreeID::from(0).proving_ids(1).collect::<Vec<_>>(), &[TreeID::from(2)]);
+    /// assert_eq!(TreeID::from(0).proving_ids(2).collect::<Vec<_>>(), &[TreeID::from(2), TreeID::from(5)]);
     /// ```
     #[inline]
     pub fn proving_ids(&self, to_height: u8) -> impl Iterator<Item = Self> {
@@ -630,16 +630,16 @@ impl TreeID {
     /// ```rust
     /// use merkle_log::*;
     ///
-    /// assert_eq!(TreeID::appending_ids(1).collect::<TreeIDs>(), &[]);
-    /// assert_eq!(TreeID::appending_ids(2).collect::<TreeIDs>(), &[TreeID::from(0)]);
-    /// assert_eq!(TreeID::appending_ids(3).collect::<TreeIDs>(), &[TreeID::from(1)]);
-    /// assert_eq!(TreeID::appending_ids(4).collect::<TreeIDs>(), &[TreeID::from(1), TreeID::from(4)]);
-    /// assert_eq!(TreeID::appending_ids(5).collect::<TreeIDs>(), &[TreeID::from(3)]);
-    /// assert_eq!(TreeID::appending_ids(6).collect::<TreeIDs>(), &[TreeID::from(3), TreeID::from(8)]);
-    /// assert_eq!(TreeID::appending_ids(7).collect::<TreeIDs>(), &[TreeID::from(3), TreeID::from(9)]);
-    /// assert_eq!(TreeID::appending_ids(8).collect::<TreeIDs>(), &[TreeID::from(3), TreeID::from(9), TreeID::from(12)]);
-    /// assert_eq!(TreeID::appending_ids(9).collect::<TreeIDs>(), &[TreeID::from(7)]);
-    /// assert_eq!(TreeID::appending_ids(10).collect::<TreeIDs>(), &[TreeID::from(7), TreeID::from(16)]);
+    /// assert_eq!(TreeID::appending_ids(1).collect::<Vec<_>>(), &[]);
+    /// assert_eq!(TreeID::appending_ids(2).collect::<Vec<_>>(), &[TreeID::from(0)]);
+    /// assert_eq!(TreeID::appending_ids(3).collect::<Vec<_>>(), &[TreeID::from(1)]);
+    /// assert_eq!(TreeID::appending_ids(4).collect::<Vec<_>>(), &[TreeID::from(1), TreeID::from(4)]);
+    /// assert_eq!(TreeID::appending_ids(5).collect::<Vec<_>>(), &[TreeID::from(3)]);
+    /// assert_eq!(TreeID::appending_ids(6).collect::<Vec<_>>(), &[TreeID::from(3), TreeID::from(8)]);
+    /// assert_eq!(TreeID::appending_ids(7).collect::<Vec<_>>(), &[TreeID::from(3), TreeID::from(9)]);
+    /// assert_eq!(TreeID::appending_ids(8).collect::<Vec<_>>(), &[TreeID::from(3), TreeID::from(9), TreeID::from(12)]);
+    /// assert_eq!(TreeID::appending_ids(9).collect::<Vec<_>>(), &[TreeID::from(7)]);
+    /// assert_eq!(TreeID::appending_ids(10).collect::<Vec<_>>(), &[TreeID::from(7), TreeID::from(16)]);
     /// ```
     #[inline]
     pub fn appending_ids(new_len: u64) -> impl Iterator<Item = Self> {
@@ -653,17 +653,17 @@ impl TreeID {
     /// ```rust
     /// use merkle_log::*;
     ///
-    /// assert_eq!(TreeID::subroot_ids(0).collect::<TreeIDs>(), &[]);
-    /// assert_eq!(TreeID::subroot_ids(1).collect::<TreeIDs>(), &[TreeID::from(0)]);
-    /// assert_eq!(TreeID::subroot_ids(2).collect::<TreeIDs>(), &[TreeID::from(1)]);
-    /// assert_eq!(TreeID::subroot_ids(3).collect::<TreeIDs>(), &[TreeID::from(1), TreeID::from(4)]);
-    /// assert_eq!(TreeID::subroot_ids(4).collect::<TreeIDs>(), &[TreeID::from(3)]);
-    /// assert_eq!(TreeID::subroot_ids(5).collect::<TreeIDs>(), &[TreeID::from(3), TreeID::from(8)]);
-    /// assert_eq!(TreeID::subroot_ids(6).collect::<TreeIDs>(), &[TreeID::from(3), TreeID::from(9)]);
-    /// assert_eq!(TreeID::subroot_ids(7).collect::<TreeIDs>(), &[TreeID::from(3), TreeID::from(9), TreeID::from(12)]);
-    /// assert_eq!(TreeID::subroot_ids(8).collect::<TreeIDs>(), &[TreeID::from(7)]);
-    /// assert_eq!(TreeID::subroot_ids(9).collect::<TreeIDs>(), &[TreeID::from(7), TreeID::from(16)]);
-    /// assert_eq!(TreeID::subroot_ids(10).collect::<TreeIDs>(), &[TreeID::from(7), TreeID::from(17)]);
+    /// assert_eq!(TreeID::subroot_ids(0).collect::<Vec<_>>(), &[]);
+    /// assert_eq!(TreeID::subroot_ids(1).collect::<Vec<_>>(), &[TreeID::from(0)]);
+    /// assert_eq!(TreeID::subroot_ids(2).collect::<Vec<_>>(), &[TreeID::from(1)]);
+    /// assert_eq!(TreeID::subroot_ids(3).collect::<Vec<_>>(), &[TreeID::from(1), TreeID::from(4)]);
+    /// assert_eq!(TreeID::subroot_ids(4).collect::<Vec<_>>(), &[TreeID::from(3)]);
+    /// assert_eq!(TreeID::subroot_ids(5).collect::<Vec<_>>(), &[TreeID::from(3), TreeID::from(8)]);
+    /// assert_eq!(TreeID::subroot_ids(6).collect::<Vec<_>>(), &[TreeID::from(3), TreeID::from(9)]);
+    /// assert_eq!(TreeID::subroot_ids(7).collect::<Vec<_>>(), &[TreeID::from(3), TreeID::from(9), TreeID::from(12)]);
+    /// assert_eq!(TreeID::subroot_ids(8).collect::<Vec<_>>(), &[TreeID::from(7)]);
+    /// assert_eq!(TreeID::subroot_ids(9).collect::<Vec<_>>(), &[TreeID::from(7), TreeID::from(16)]);
+    /// assert_eq!(TreeID::subroot_ids(10).collect::<Vec<_>>(), &[TreeID::from(7), TreeID::from(17)]);
     /// // test root
     /// // assert_eq!(TreeID::subroot_ids(TreeID::MAX_LEN).count() as u64, 0u64);
     /// ```
