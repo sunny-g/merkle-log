@@ -405,7 +405,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use digest::Output;
     use sha2::Sha256;
 
     type TestLog = MerkleLog<Sha256>;
