@@ -135,14 +135,14 @@ pub trait Digest<N: Node>: Default {
 #[cfg(feature = "digest")]
 mod _digest {
     use super::*;
-    use digest::{generic_array::ArrayLength, Output, OutputSizeUser};
+    use digest::Output;
 
-    impl<D> Digest<Output<Self>> for D
+    impl<D, N> Digest<N> for D
     where
         D: digest::Digest + Default,
-        <<D as OutputSizeUser>::OutputSize as ArrayLength<u8>>::ArrayType: Node,
+        N: Node + From<Output<D>>,
     {
-        fn leaf_digest<R: Read>(entry: R) -> Output<Self> {
+        fn leaf_digest<R: Read>(entry: R) -> N {
             let mut hasher = Self::default();
             let mut reader = BufReader::new(entry);
             loop {
@@ -157,17 +157,14 @@ mod _digest {
                     }
                 }
             }
-            hasher.finalize()
+            hasher.finalize().into()
         }
 
-        fn node_digest(
-            left: (TreeID, &Output<Self>),
-            right: (TreeID, &Output<Self>),
-        ) -> Output<Self> {
+        fn node_digest(left: (TreeID, &N), right: (TreeID, &N)) -> N {
             let mut hasher = Self::default();
-            hasher.update(left.1);
-            hasher.update(right.1);
-            hasher.finalize()
+            hasher.update(left.1.as_ref());
+            hasher.update(right.1.as_ref());
+            hasher.finalize().into()
         }
     }
 }

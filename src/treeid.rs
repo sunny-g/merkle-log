@@ -1,5 +1,4 @@
-use crate::maybestd::iter;
-use crate::util::Either;
+use crate::{maybestd::iter, util::Either};
 
 /// Unique identifiers for binary tree nodes. Reproduced from [flat-tree].
 ///
@@ -11,8 +10,10 @@ use crate::util::Either;
 pub struct TreeID(u64);
 
 impl TreeID {
-    // a log longer than this wouldn't have a valid TreeID
-    const MAX_LEN: u64 = Self::MAX_LEAF_INDEX + 1;
+    ///
+    /// a log longer than this wouldn't have a valid TreeID
+    #[doc(hidden)]
+    pub const MAX_LEN: u64 = Self::MAX_LEAF_INDEX + 1;
 
     /// The maximum index of a leaf's [`TreeID`].
     #[doc(hidden)]
@@ -614,6 +615,7 @@ impl TreeID {
     /// ```
     #[inline]
     pub fn proving_ids(&self, to_height: u8) -> impl Iterator<Item = Self> {
+        debug_assert!(to_height <= Self::MAX_HEIGHT);
         (0..(to_height - self.height())).scan(*self, |current_id, _| {
             let sibling = current_id.sibling();
             *current_id = current_id.parent();
@@ -662,6 +664,8 @@ impl TreeID {
     /// assert_eq!(TreeID::subroot_ids(8).collect::<TreeIDs>(), &[TreeID::from(7)]);
     /// assert_eq!(TreeID::subroot_ids(9).collect::<TreeIDs>(), &[TreeID::from(7), TreeID::from(16)]);
     /// assert_eq!(TreeID::subroot_ids(10).collect::<TreeIDs>(), &[TreeID::from(7), TreeID::from(17)]);
+    /// // test root
+    /// // assert_eq!(TreeID::subroot_ids(TreeID::MAX_LEN).count() as u64, 0u64);
     /// ```
     #[inline]
     pub fn subroot_ids(len: u64) -> impl Iterator<Item = Self> {
