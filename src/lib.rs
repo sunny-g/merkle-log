@@ -3,31 +3,52 @@
 //!
 //! [Transparent Logs for Skeptical Clients]: https://research.swtch.com/tlog
 
-extern crate digest;
-
+#[cfg_attr(not(feature = "std"), no_std)]
 mod error;
+mod treeid;
 mod util;
 
 pub use error::Error;
-pub use util::{MemoryStore, Store, TreeID};
+pub use treeid::TreeID;
+pub use util::{Digest, MemoryStore, Store};
 
-use digest::Digest;
-use std::{
-    collections::{HashMap, HashSet},
-    marker::PhantomData,
-};
+use crate::{maybestd::*, util::Either};
+
+#[cfg(not(feature = "std"))]
+pub(crate) mod maybestd {
+    extern crate alloc;
+
+    pub use alloc::{
+        collections::{BTreeMap, BTreeSet},
+        vec::Vec,
+    };
+    pub use core::{iter, marker::PhantomData};
+    pub use core2::io::{self, BufRead, BufReader, Read, Write};
+}
+
+#[cfg(feature = "std")]
+pub(crate) mod maybestd {
+    pub use core2::io::{self, BufRead, Read, Write};
+    pub use std::{
+        collections::{BTreeMap, BTreeSet},
+        io::BufReader,
+        iter,
+        marker::PhantomData,
+        vec::Vec,
+    };
+}
 
 /// Type alias for nodes in the merkle tree.
 pub trait Node: AsRef<[u8]> + Copy + Eq {}
-impl<T: AsRef<[u8]> + Copy + Eq> Node for T {}
+impl<N> Node for N where N: AsRef<[u8]> + Copy + Eq {}
 
-/// Type alias for a [`HashMap`] containing leaf and tree nodes.
+/// Type alias for a [`BTreeMap`] containing leaf and tree nodes.
 ///
-/// [`HashMap`]: std::collections::HashMap
-pub type Proof<N = [u8; 32]> = HashMap<TreeID, N>;
+/// [`BTreeMap`]: crate::maybestd::BTreeMap
+pub type Proof<N> = BTreeMap<TreeID, N>;
 
 /// A [Merkle Tree-Structured Log] is a potentially unbalanced merkle tree
-/// containing the entries of an append-only log.
+/// containing the entries of an append-only log (maximum `2^63 + 1` entries).
 ///
 /// It extends the functionality of a traditional merkle tree by allowing for:
 /// - continually appending new entries (even when the length of the log is not
@@ -38,6 +59,7 @@ pub type Proof<N = [u8; 32]> = HashMap<TreeID, N>;
 /// ## Example
 /// ```rust
 /// use merkle_log::{MemoryStore, MerkleLog, Store};
+/// use digest::Output;
 /// use sha2::Sha256;
 ///
 /// let mut store = MemoryStore::default();
@@ -51,7 +73,8 @@ pub type Proof<N = [u8; 32]> = HashMap<TreeID, N>;
 ///
 /// // second entry
 /// let entry = b"world";
-/// log.append(entry, &mut store).unwrap();
+/// let new_nodes = log.append(entry, &mut store).unwrap();
+/// store.set_many(new_nodes.into_iter()).unwrap();
 ///
 /// // prove existence of initial entry by its digest
 /// let proof = log.prove(0, &store).unwrap();
@@ -61,29 +84,34 @@ pub type Proof<N = [u8; 32]> = HashMap<TreeID, N>;
 /// [Merkle Tree-Structured Log]: https://research.swtch.com/tlog#merkle_tree-structured_log
 #[derive(Clone, Debug)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
-pub struct MerkleLog<D: Digest, N = [u8; 32]> {
-    /// The index of the log's head.
-    index: u64,
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshDeserialize, borsh::BorshSerialize)
+)]
+pub struct MerkleLog<D: Digest<N>, N: Node = [u8; 32]> {
     /// The digest of the log's head.
     head: N,
     /// The merkle root of the tree in which this entry is the head.
     root: N,
+    /// The index of the log's head.
+    index: u64,
     /// The underlying digest used by this log.
     #[cfg_attr(feature = "serde", serde(skip))]
+    #[cfg_attr(feature = "borsh", borsh_skip)]
     _digest: PhantomData<D>,
 }
 
 impl<D, N> MerkleLog<D, N>
 where
-    D: Digest,
-    N: Node + From<digest::Output<D>>,
+    D: Digest<N>,
+    N: Node,
 {
     /// Creates a new [`MerkleLog`] from the first log entry.
     ///
     /// [`MerkleLog`]: crate::MerkleLog
     #[inline]
     pub fn new(entry: impl AsRef<[u8]>) -> Self {
-        let head = Self::leaf_hash(entry);
+        let head = D::leaf_digest(entry.as_ref());
         Self {
             index: 0,
             head,
@@ -92,17 +120,9 @@ where
         }
     }
 
-    /// The unique [`TreeID`] of the current head.
-    ///
-    /// [`TreeID`]: crate::TreeID
-    #[inline(always)]
-    pub fn head_id(&self) -> TreeID {
-        TreeID::new(0, self.index)
-    }
-
     /// The size of the log.
     #[inline(always)]
-    pub fn size(&self) -> u64 {
+    pub const fn len(&self) -> u64 {
         self.index + 1
     }
 
@@ -110,32 +130,49 @@ where
     ///
     /// [`Node`]: crate::Node
     #[inline(always)]
-    pub fn head(&self) -> &N {
+    pub const fn head(&self) -> &N {
         &self.head
+    }
+
+    /// The unique [`TreeID`] of the current head.
+    ///
+    /// [`TreeID`]: crate::TreeID
+    #[inline(always)]
+    pub const fn head_id(&self) -> TreeID {
+        TreeID::leaf(self.index)
     }
 
     /// The merkle root [`Node`] of the log.
     ///
     /// [`Node`]: crate::Node
     #[inline(always)]
-    pub fn root(&self) -> &N {
+    pub const fn root(&self) -> &N {
         &self.root
+    }
+
+    /// The unique [`TreeID`] of the current root.
+    ///
+    /// [`TreeID`]: crate::TreeID
+    #[inline(always)]
+    pub const fn root_id(&self) -> TreeID {
+        TreeID::first(self.root_height())
     }
 
     /// The unique [`TreeID`] of the current tree root.
     ///
     /// [`TreeID`]: crate::TreeID
     #[inline(always)]
-    pub fn root_depth(&self) -> u8 {
-        TreeID::root_depth(self.size())
+    pub const fn root_height(&self) -> u8 {
+        TreeID::root_height(self.len())
     }
 
     /// Produces the [`TreeID`]s whose values are required to produce a valid
-    /// proof for a particular entry in the log.
+    /// proof for a particular entry in the log, starting from the head.
     ///
     /// ## Examples
     /// ```rust
     /// use merkle_log::{MemoryStore, MerkleLog, Store, TreeID};
+    /// use digest::Output;
     /// use sha2::Sha256;
     ///
     /// let mut store = MemoryStore::default();
@@ -144,51 +181,40 @@ where
     /// let mut log = MerkleLog::<Sha256>::new(&entry);
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
     ///
-    /// log.append(&entry, &mut store).unwrap(); // size 2
-    /// log.append(&entry, &mut store).unwrap(); // size 3
-    /// assert_eq!(log.proving_ids(1).unwrap(), [TreeID::from(0), TreeID::from(4)].iter().copied().collect());
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 2
+    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 3
+    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// assert_eq!(log.proving_ids(1).collect::<Vec<_>>(), &[TreeID::from(0), TreeID::from(4)]);
     ///
-    /// log.append(&entry, &mut store).unwrap(); // size 4
-    /// assert_eq!(log.proving_ids(1).unwrap(), [TreeID::from(0), TreeID::from(5)].iter().copied().collect());
-    /// assert_eq!(log.proving_ids(2).unwrap(), [TreeID::from(1), TreeID::from(6)].iter().copied().collect());
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 4
+    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// assert_eq!(log.proving_ids(1).collect::<Vec<_>>(), &[TreeID::from(0), TreeID::from(5)]);
+    /// assert_eq!(log.proving_ids(2).collect::<Vec<_>>(), &[TreeID::from(6), TreeID::from(1)]);
     /// ```
     ///
     /// [`TreeID`]: crate::TreeID
-    pub fn proving_ids(&self, entry_index: u64) -> Result<HashSet<TreeID>, Error> {
-        let size = self.size();
-        let entry_id = TreeID::new(0, entry_index);
-
-        if entry_index > self.index {
-            return Err(Error::ProofError(
-                "proving index greater than log head index",
-            ));
-        } else if self.index == 0 {
-            return Ok(HashSet::default());
-        }
+    pub fn proving_ids(&self, entry_index: u64) -> impl Iterator<Item = TreeID> {
+        let len = self.len();
+        let entry_id = TreeID::leaf(entry_index);
 
         // if balanced, use traditional merkle tree proof creation
-        let root_depth = self.root_depth();
-        if size.is_power_of_two() {
-            return Ok(entry_id.proving_ids(root_depth, None));
+        if len.is_power_of_two() {
+            return Either::Left(entry_id.proving_ids(self.root_height()));
         }
 
-        // otherwise, compute subroots, pushing all but the head
-        let subroots = TreeID::subroots(size).ok_or(Error::Overflow)?;
-        let mut tree_ids = HashSet::with_capacity(root_depth as usize + subroots.len());
-        for subroot_id in subroots.iter() {
+        Either::Right(TreeID::subroot_ids(len).flat_map(move |subroot_id| {
             if subroot_id.spans(&entry_id) {
-                tree_ids = entry_id.proving_ids(subroot_id.depth(), Some(tree_ids));
+                Either::Left(entry_id.proving_ids(subroot_id.height()))
             } else {
-                tree_ids.insert(*subroot_id);
+                Either::Right(iter::once(subroot_id))
             }
-        }
-
-        Ok(tree_ids)
+        }))
     }
 
     /// Creates a proof that an entry is contained within the current log.
     pub fn prove<S: Store<N>>(&self, entry_index: u64, store: &S) -> Result<Proof<N>, Error> {
-        store.get_many(self.proving_ids(entry_index)?.iter())
+        store.get_many(self.proving_ids(entry_index))
     }
 
     /// Verifies a proof asserting that the `entry_node` exists at `entry_index`
@@ -199,13 +225,13 @@ where
         entry_node: &N,
         proof: &Proof<N>,
     ) -> Result<bool, Error> {
-        let size = self.size();
-        let entry_id = TreeID::new(0, entry_index);
+        let len = self.len();
+        let entry_id = TreeID::leaf(entry_index);
 
         if entry_index > self.index {
             // check if out-of-bounds
             return Err(Error::OutOfBounds);
-        } else if size == 1 {
+        } else if len == 1 {
             // verifying a length-1 log
             // index should be 0 and entry_node should be the log's root
             return Ok(entry_index == self.index
@@ -214,31 +240,40 @@ where
         }
 
         // if balanced, use traditional merkle tree verification
-        if size.is_power_of_two() {
-            let root = Self::tree_hash(entry_id, entry_node, self.root_depth(), proof, None)?;
+        if len.is_power_of_two() {
+            let root = Self::root_hash(entry_id, entry_node, self.root_height(), proof)?;
             return Ok(root == self.root);
         }
 
         // otherwise
         // compute subroots, join them from right to left
-        let subroot_ids = TreeID::subroots(size).ok_or(Error::Overflow)?;
-        let mut subroots = subroot_ids
-            .iter()
+        let head_id = self.head_id();
+        let mut subroots = TreeID::subroot_ids(len)
             .filter_map(|subroot_id| match subroot_id {
-                _ if self.head_id() == *subroot_id => Some(self.head),
+                _ if &head_id == &subroot_id => Some((head_id, self.head)),
                 _ if subroot_id.spans(&entry_id) => {
-                    Self::tree_hash(entry_id, entry_node, subroot_id.depth(), proof, None).ok()
+                    Self::root_hash(entry_id, entry_node, subroot_id.height(), proof)
+                        .ok()
+                        .map(|subroot| (subroot_id, subroot))
                 }
-                _ => proof.get(subroot_id).copied(),
+                _ => proof
+                    .get(&subroot_id)
+                    .copied()
+                    .map(|subroot| (subroot_id, subroot)),
             })
+            .collect::<Vec<(TreeID, N)>>()
+            .into_iter()
             .rev();
 
         let first_subroot = subroots.next();
-        let root = subroots.fold(first_subroot, |root, subroot| {
-            root.map(|root| Self::node_hash(&subroot, &root))
-        });
+        let (_, root) = subroots
+            .fold(first_subroot, |root, (subroot_id, subroot)| {
+                root.map(|(root_id, root)| D::node_digest((subroot_id, &subroot), (root_id, &root)))
+                    .map(|root| (subroot_id.parent(), root))
+            })
+            .ok_or_else(|| Error::ProofError("failed to compute root digest"))?;
 
-        Ok(root == Some(self.root))
+        Ok(root == self.root)
     }
 
     /// Produces the [`TreeID`]s whose values are required to append the next
@@ -248,6 +283,7 @@ where
     /// ## Examples
     /// ```rust
     /// use merkle_log::{MemoryStore, MerkleLog, Store, TreeID};
+    /// use digest::Output;
     /// use sha2::Sha256;
     ///
     /// let mut store = MemoryStore::default();
@@ -255,21 +291,25 @@ where
     /// let entry = b"hello";
     /// let mut log = MerkleLog::<Sha256>::new(&entry);
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
-    /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(0)]);
+    /// assert_eq!(log.appending_ids().collect::<Vec<_>>(), &[TreeID::from(0)]);
     ///
-    /// log.append(&entry, &mut store).unwrap(); // size 2
-    /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(1)]);
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 2
+    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// assert_eq!(log.appending_ids().collect::<Vec<_>>(), &[TreeID::from(1)]);
     ///
-    /// log.append(&entry, &mut store).unwrap(); // size 3
-    /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(1), TreeID::from(4)]);
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 3
+    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// assert_eq!(log.appending_ids().collect::<Vec<_>>(), &[TreeID::from(1), TreeID::from(4)]);
     ///
-    /// log.append(&entry, &mut store).unwrap(); // size 4
-    /// assert_eq!(log.appending_ids().unwrap(), &[TreeID::from(3)]);
+    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 4
+    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// assert_eq!(log.appending_ids().collect::<Vec<_>>(), &[TreeID::from(3)]);
     /// ```
     ///
     /// [`TreeID`]: crate::TreeID
-    pub fn appending_ids(&self) -> Result<Vec<TreeID>, Error> {
-        TreeID::appending_ids(self.size() + 1).ok_or(Error::Overflow)
+    #[inline]
+    pub fn appending_ids(&self) -> impl Iterator<Item = TreeID> {
+        TreeID::appending_ids(self.len() + 1)
     }
 
     /// Appends a new entry to the log, returning the new permanent [`Node`]s to
@@ -278,6 +318,7 @@ where
     /// ## Examples
     /// ```rust
     /// use merkle_log::{MerkleLog, MemoryStore, Store, TreeID};
+    /// use digest::Output;
     /// use sha2::Sha256;
     ///
     /// let mut store = MemoryStore::default();
@@ -285,11 +326,11 @@ where
     /// let mut entry = b"hello";
     /// let mut log = MerkleLog::<Sha256>::new(&entry);
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
-    /// assert_eq!(log.size(), 1);
+    /// assert_eq!(log.len(), 1);
     /// assert_eq!(log.head_id(), TreeID::from(0));
     ///
     /// let new_nodes = log.append(b"world", &mut store).unwrap();
-    /// assert_eq!(log.size(), 2);
+    /// assert_eq!(log.len(), 2);
     /// assert_eq!(log.head_id(), TreeID::from(2));
     /// assert_eq!(new_nodes.get(&TreeID::from(1)).unwrap(), log.root());
     /// ```
@@ -298,21 +339,25 @@ where
     pub fn append<S: Store<N>>(
         &mut self,
         entry: impl AsRef<[u8]>,
-        store: &mut S,
-    ) -> Result<HashMap<TreeID, N>, Error> {
+        store: &S,
+    ) -> Result<BTreeMap<TreeID, N>, Error> {
         let new_index = self.index + 1;
-        let new_head_id = TreeID::new(0, new_index);
-        let new_head = Self::leaf_hash(entry.as_ref());
+        let new_head_id = TreeID::leaf(new_index);
+        let new_head = D::leaf_digest(entry.as_ref());
 
-        let appending_ids = self.appending_ids()?;
         let mut current = new_head;
         let mut current_id = new_head_id;
-        let mut new_nodes = HashMap::with_capacity(appending_ids.len());
+        let mut new_nodes = BTreeMap::new();
 
-        for subroot_id in appending_ids.iter().rev() {
+        for subroot_id in self
+            .appending_ids()
+            .collect::<Vec<TreeID>>()
+            .into_iter()
+            .rev()
+        {
             let subroot = store.get(&subroot_id)?;
-            current = Self::node_hash(&subroot, &current);
             current_id = current_id.parent();
+            current = D::node_digest((subroot_id, &subroot), (current_id, &current));
 
             if current_id == subroot_id.parent() {
                 new_nodes.insert(current_id, current);
@@ -320,7 +365,6 @@ where
         }
 
         new_nodes.insert(new_head_id, new_head);
-        store.set_many(new_nodes.iter().map(|(k, v)| (*k, *v)))?;
 
         self.index = new_index;
         self.head = new_head;
@@ -328,54 +372,44 @@ where
         Ok(new_nodes)
     }
 
-    pub(crate) fn tree_hash<S: Store<N>>(
+    /// Computes the root hash of a balanced merkle tree, starting from the
+    /// `leaf_id` node.
+    pub(crate) fn root_hash<S: Store<N>>(
         leaf_id: TreeID,
         leaf_node: &N,
-        depth: u8,
+        height: u8,
         in_store: &S,
-        mut out_store: Option<&mut HashMap<TreeID, N>>,
     ) -> Result<N, Error> {
         use std::cmp::Ordering::*;
 
         let mut current_id = leaf_id;
         let mut current = *leaf_node;
-        for _ in 0..depth {
+        for _ in 0..height {
             let sibling_id = current_id.sibling();
             let sibling = in_store.get(&sibling_id)?;
 
             current = match current_id.cmp(&sibling_id) {
-                Less => Self::node_hash(&current, &sibling),
-                Greater => Self::node_hash(&sibling, &current),
+                Less => D::node_digest((current_id, &current), (sibling_id, &sibling)),
+                Greater => D::node_digest((sibling_id, &sibling), (current_id, &current)),
                 _ => unreachable!(),
             };
             current_id = current_id.parent();
-
-            if let Some(ref mut out_store) = out_store {
-                out_store.insert(current_id, current);
-            }
         }
 
         Ok(current)
     }
-
-    pub(crate) fn node_hash(left: &N, right: &N) -> N {
-        N::from(D::new().chain(left).chain(right).finalize())
-    }
-
-    /// Computes the hash of an entry.
-    pub(crate) fn leaf_hash(entry: impl AsRef<[u8]>) -> N {
-        N::from(D::digest(entry.as_ref()))
-    }
 }
 
-impl<D: Clone + Digest, N: Node> Copy for MerkleLog<D, N> {}
+// impl<D: Digest + Clone> Copy for MerkleLog<D> {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use digest::Output;
     use sha2::Sha256;
 
     type TestLog = MerkleLog<Sha256>;
+    type MemStore = MemoryStore<[u8; 32]>;
 
     // reference trees
     // proving (2), providing [0] w/ static {1}:
@@ -389,17 +423,18 @@ mod tests {
     //     1       [5]      [9]     \
     // [0]  (2)   4   6    8   10    12
     //
-    // proving (26), providing [7, 19, 24] with static {7, 19}:
+    // proving (26), providing [7, 19, 21, 24] with static {7, 19}:
     //                               15
-    //              [7]                               \
-    //       3               11             [19]        \
-    //   1       5       9       13      17      21      25
-    // 0   2   4   6   8  10   12  14  16  18  20  22 [24](26)
+    //              [7]                                   \
+    //       3               11              [19]          |
+    //   1       5       9       13      17       [21]     25
+    // 0   2   4   6   8  10   12  14  16  18    20  22 [24](26)
 
-    fn new() -> (MemoryStore, TestLog) {
-        let mut store = MemoryStore::default();
+    fn new() -> (MemStore, TestLog) {
+        let mut store = MemStore::default();
         let log = TestLog::new(&"hello world");
-        store.set_leaf(log.head_id(), *log.head()).unwrap();
+        let log_head = *log.head();
+        store.set_leaf(log.head_id(), log_head).unwrap();
         (store, log)
     }
 
@@ -407,7 +442,7 @@ mod tests {
     fn creation() {
         let (_, log) = new();
         assert_eq!(log.head_id(), TreeID::from(0));
-        assert_eq!(log.size(), 1);
+        assert_eq!(log.len(), 1);
         assert_eq!(log.head(), log.root());
     }
 
@@ -419,11 +454,12 @@ mod tests {
 
         for idx in 1..=128u64 {
             let entry = format!("hello world x{}", idx);
-            let _ = log.append(&entry, &mut store).expect(&format!(
+            let new_nodes = log.append(&entry, &mut store).expect(&format!(
                 "should be able to append \"{}\" at idx {}",
                 &entry, idx
             ));
-            assert_eq!(log.size(), idx + 1);
+            store.set_many(new_nodes.into_iter()).unwrap();
+            assert_eq!(log.len(), idx + 1);
 
             let proof = log.prove(idx, &store).unwrap();
             assert!(

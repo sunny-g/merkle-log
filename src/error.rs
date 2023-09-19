@@ -1,5 +1,4 @@
-use crate::TreeID;
-use std::io::Error as IoError;
+use crate::{maybestd::io::Error as IoError, TreeID};
 use thiserror::Error;
 
 #[derive(Debug, Error)]

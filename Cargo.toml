@@ -1,6 +1,6 @@
 [package]
 name = "merkle-log"
-version = "0.0.6"
+version = "0.0.7"
 authors = ["sunny-g <sunny.gonna@gmail.com>"]
 description = "An implementation of the \"Merkle Tree-Structured Log\" defined in the paper \"Transparent Logs for Skeptical Clients.\" https://research.swtch.com/tlog"
 repository = "https://github.com/sunny-g/merkle-log"
@@ -9,14 +9,24 @@ keywords = ["merkle-tree", "crypto"]
 categories = ["cryptography", "data-structures"]
 license = "MIT OR Apache-2.0"
 edition = "2018"
+rust-version = "1.60"
 
 [dependencies]
-digest = "0.9"
-serde = { version = "1.0", features = ["derive"], optional = true }
+core2 = { version = "0.4", default-features = false }
 thiserror = "1.0"
 
+# optional
+borsh = { version = "0.10", optional = true }
+digest = { version = "0.10", optional = true }
+serde = { version = "1.0", default-features = false, optional = true, features = ["derive"] }
+
 [dev-dependencies]
-sha2 = "0.9"
+digest = { version = "0.10", features = ["std"] }
+merkle-log = { path = ".", features = ["std", "digest"] }
+sha2 = "0.10"
 
 [features]
-default = ["serde"]
+default = ["std"]
+std = ["borsh?/std", "core2/std", "digest?/std", "serde?/std"]
+
+[workspace]
