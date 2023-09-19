@@ -29,4 +29,7 @@ sha2 = "0.10"
 default = ["std"]
 std = ["borsh?/std", "core2/std", "digest?/std", "serde?/std"]
 
+[package.metadata.docs.rs]
+features = ["std", "digest"]
+
 [workspace]
