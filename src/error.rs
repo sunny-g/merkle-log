@@ -1,5 +1,5 @@
 use crate::{maybestd::io::Error as IoError, TreeID};
-use thiserror::Error;
+use onlyerror::Error;
 
 #[derive(Debug, Error)]
 pub enum Error {
