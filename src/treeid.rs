@@ -1,4 +1,7 @@
-use crate::{maybestd::iter, util::Either};
+use crate::{
+    maybestd::{io, iter},
+    util::Either,
+};
 
 /// Unique identifiers for binary tree nodes. Reproduced from [flat-tree].
 ///
@@ -10,7 +13,15 @@ use crate::{maybestd::iter, util::Either};
 pub struct TreeID(u64);
 
 impl TreeID {
-    ///
+    /// The highest root [`TreeID`] of a full [`MerkleLog`].
+    pub const ROOT: Self = Self(Self::MAX_LEAF_INDEX);
+
+    /// The [`TreeID`] of the very first leaf.
+    pub const MIN_LEAF: Self = Self::leaf(0);
+
+    /// The [`TreeID`] of the very last leaf.
+    pub const MAX_LEAF: Self = Self::leaf(Self::MAX_LEAF_INDEX);
+
     /// a log longer than this wouldn't have a valid TreeID
     #[doc(hidden)]
     pub const MAX_LEN: u64 = Self::MAX_LEAF_INDEX + 1;
@@ -29,15 +40,6 @@ impl TreeID {
     /// the height to one less bit
     #[doc(hidden)]
     pub const MAX_HEIGHT: u8 = (u64::BITS - 1) as u8;
-
-    /// The highest root [`TreeID`] of a full [`MerkleLog`].
-    pub const ROOT: Self = Self(Self::MAX_LEAF_INDEX);
-
-    /// The [`TreeID`] of the very first leaf.
-    pub const MIN_LEAF: Self = Self::leaf(0);
-
-    /// The [`TreeID`] of the very last leaf.
-    pub const MAX_LEAF: Self = Self::leaf(Self::MAX_LEAF_INDEX);
 
     /// Returns a node's unique id within the tree, given its height and index.
     ///
@@ -777,6 +779,20 @@ const fn prev_power_of_two(n: u64) -> u64 {
 impl From<u64> for TreeID {
     fn from(id: u64) -> Self {
         Self(id)
+    }
+}
+
+#[cfg(feature = "borsh")]
+impl borsh::BorshSerialize for TreeID {
+    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        self.0.serialize(writer)
+    }
+}
+
+#[cfg(feature = "borsh")]
+impl borsh::BorshDeserialize for TreeID {
+    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        Ok(Self(u64::deserialize_reader(reader)?))
     }
 }
 
