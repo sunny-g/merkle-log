@@ -66,7 +66,7 @@ pub type Proof<N> = BTreeMap<TreeID, N>;
 ///
 /// // first entry
 /// let entry = b"hello";
-/// let mut log = MerkleLog::<Sha256>::new(&entry);
+/// let mut log = MerkleLog::<Sha256, [u8; 32]>::new(&entry);
 /// let initial_head = *log.head();
 /// let initial_log = log.clone();
 /// store.set_leaf(log.head_id(), initial_head).unwrap();
@@ -88,7 +88,7 @@ pub type Proof<N> = BTreeMap<TreeID, N>;
     feature = "borsh",
     derive(borsh::BorshDeserialize, borsh::BorshSerialize)
 )]
-pub struct MerkleLog<D: Digest<N>, N: Node = [u8; 32]> {
+pub struct MerkleLog<D: Digest<N>, N: Node> {
     /// The digest of the log's head.
     head: N,
     /// The merkle root of the tree in which this entry is the head.
@@ -178,7 +178,7 @@ where
     /// let mut store = MemoryStore::default();
     ///
     /// let entry = b"hello";
-    /// let mut log = MerkleLog::<Sha256>::new(&entry);
+    /// let mut log = MerkleLog::<Sha256, [u8; 32]>::new(&entry);
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
     ///
     /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 2
@@ -289,7 +289,7 @@ where
     /// let mut store = MemoryStore::default();
     ///
     /// let entry = b"hello";
-    /// let mut log = MerkleLog::<Sha256>::new(&entry);
+    /// let mut log = MerkleLog::<Sha256, [u8; 32]>::new(&entry);
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
     /// assert_eq!(log.appending_ids().collect::<Vec<_>>(), &[TreeID::from(0)]);
     ///
@@ -324,7 +324,7 @@ where
     /// let mut store = MemoryStore::default();
     ///
     /// let mut entry = b"hello";
-    /// let mut log = MerkleLog::<Sha256>::new(&entry);
+    /// let mut log = MerkleLog::<Sha256, [u8; 32]>::new(&entry);
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
     /// assert_eq!(log.len(), 1);
     /// assert_eq!(log.head_id(), TreeID::from(0));
@@ -400,14 +400,23 @@ where
     }
 }
 
-// impl<D: Digest + Clone> Copy for MerkleLog<D> {}
+impl<D: Digest<N> + Clone, N: Node> Copy for MerkleLog<D, N> {}
+impl<D: Digest<N>, N: Node> PartialEq for MerkleLog<D, N> {
+    fn eq(&self, other: &Self) -> bool {
+        self.head == other.head
+            && self.root == other.root
+            && self.index == other.index
+            && self._digest == other._digest
+    }
+}
+impl<D: Digest<N>, N: Node> Eq for MerkleLog<D, N> {}
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use sha2::Sha256;
 
-    type TestLog = MerkleLog<Sha256>;
+    type TestLog = MerkleLog<Sha256, [u8; 32]>;
     type MemStore = MemoryStore<[u8; 32]>;
 
     // reference trees
