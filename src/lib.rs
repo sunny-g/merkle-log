@@ -73,8 +73,7 @@ pub type Proof<N> = BTreeMap<TreeID, N>;
 ///
 /// // second entry
 /// let entry = b"world";
-/// let new_nodes = log.append(entry, &mut store).unwrap();
-/// store.set_many(new_nodes.into_iter()).unwrap();
+/// log.append(entry, &mut store).unwrap();
 ///
 /// // prove existence of initial entry by its digest
 /// let proof = log.prove(0, &store).unwrap();
@@ -181,14 +180,11 @@ where
     /// let mut log = MerkleLog::<Sha256, [u8; 32]>::new(&entry);
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
     ///
-    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 2
-    /// store.set_many(new_nodes.into_iter()).unwrap();
-    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 3
-    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// log.append(&entry, &mut store).unwrap(); // new size 2
+    /// log.append(&entry, &mut store).unwrap(); // new size 3
     /// assert_eq!(log.proving_ids(1).collect::<Vec<_>>(), &[TreeID::from(0), TreeID::from(4)]);
     ///
-    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 4
-    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// log.append(&entry, &mut store).unwrap(); // new size 4
     /// assert_eq!(log.proving_ids(1).collect::<Vec<_>>(), &[TreeID::from(0), TreeID::from(5)]);
     /// assert_eq!(log.proving_ids(2).collect::<Vec<_>>(), &[TreeID::from(6), TreeID::from(1)]);
     /// ```
@@ -293,16 +289,13 @@ where
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
     /// assert_eq!(log.appending_ids().collect::<Vec<_>>(), &[TreeID::from(0)]);
     ///
-    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 2
-    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// log.append(&entry, &mut store).unwrap(); // new size 2
     /// assert_eq!(log.appending_ids().collect::<Vec<_>>(), &[TreeID::from(1)]);
     ///
-    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 3
-    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// log.append(&entry, &mut store).unwrap(); // new size 3
     /// assert_eq!(log.appending_ids().collect::<Vec<_>>(), &[TreeID::from(1), TreeID::from(4)]);
     ///
-    /// let new_nodes = log.append(&entry, &store).unwrap(); // new size 4
-    /// store.set_many(new_nodes.into_iter()).unwrap();
+    /// log.append(&entry, &mut store).unwrap(); // new size 4
     /// assert_eq!(log.appending_ids().collect::<Vec<_>>(), &[TreeID::from(3)]);
     /// ```
     ///
@@ -328,19 +321,20 @@ where
     /// store.set_leaf(log.head_id(), *log.head()).unwrap();
     /// assert_eq!(log.len(), 1);
     /// assert_eq!(log.head_id(), TreeID::from(0));
+    /// assert_eq!(log.head(), store.get(&log.head_id()).unwrap());
     ///
-    /// let new_nodes = log.append(b"world", &mut store).unwrap();
+    /// log.append(b"world", &mut store).unwrap();
     /// assert_eq!(log.len(), 2);
     /// assert_eq!(log.head_id(), TreeID::from(2));
-    /// assert_eq!(new_nodes.get(&TreeID::from(1)).unwrap(), log.root());
+    /// assert_eq!(log.root(), store.get(&TreeID::from(1)).unwrap());
     /// ```
     ///
     /// [`Node`]: crate::Node
     pub fn append<S: Store<N>>(
         &mut self,
         entry: impl AsRef<[u8]>,
-        store: &S,
-    ) -> Result<BTreeMap<TreeID, N>, Error> {
+        store: &mut S,
+    ) -> Result<(), Error> {
         let new_index = self.index + 1;
         let new_head_id = TreeID::leaf(new_index);
         let new_head = D::leaf_digest(entry.as_ref());
@@ -365,11 +359,12 @@ where
         }
 
         new_nodes.insert(new_head_id, new_head);
+        store.set_many(new_nodes.into_iter())?;
 
         self.index = new_index;
         self.head = new_head;
         self.root = current;
-        Ok(new_nodes)
+        Ok(())
     }
 
     /// Computes the root hash of a balanced merkle tree, starting from the
@@ -462,11 +457,10 @@ mod tests {
 
         for idx in 1..=128u64 {
             let entry = format!("hello world x{}", idx);
-            let new_nodes = log.append(&entry, &mut store).expect(&format!(
+            log.append(&entry, &mut store).expect(&format!(
                 "should be able to append \"{}\" at idx {}",
                 &entry, idx
             ));
-            store.set_many(new_nodes.into_iter()).unwrap();
             assert_eq!(log.len(), idx + 1);
 
             let proof = log.prove(idx, &store).unwrap();

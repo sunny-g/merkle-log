@@ -1,7 +1,4 @@
-use crate::{
-    maybestd::{io, iter},
-    util::Either,
-};
+use crate::{maybestd::iter, util::Either};
 
 /// Unique identifiers for binary tree nodes. Reproduced from [flat-tree].
 ///
@@ -783,18 +780,21 @@ impl From<u64> for TreeID {
 }
 
 #[cfg(feature = "borsh")]
-impl borsh::BorshSerialize for TreeID {
-    fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-        self.0.serialize(writer)
-    }
-}
+const _: () = {
+    use crate::maybestd::io;
 
-#[cfg(feature = "borsh")]
-impl borsh::BorshDeserialize for TreeID {
-    fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-        Ok(Self(u64::deserialize_reader(reader)?))
+    impl borsh::BorshSerialize for TreeID {
+        fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+            self.0.serialize(writer)
+        }
     }
-}
+
+    impl borsh::BorshDeserialize for TreeID {
+        fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+            Ok(Self(u64::deserialize_reader(reader)?))
+        }
+    }
+};
 
 // macro_rules! derive_eq {
 //     ($type:ty) => {
