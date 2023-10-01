@@ -1,20 +1,20 @@
 use crate::{maybestd::io::Error as IoError, TreeID};
-use onlyerror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
+#[cfg_attr(feature = "std", derive(thiserror::Error))]
 pub enum Error {
-    #[error("Out of bounds")]
+    #[cfg_attr(feature = "std", error("Out of bounds"))]
     OutOfBounds,
 
-    #[error("Overflow error")]
+    #[cfg_attr(feature = "std", error("Overflow error"))]
     Overflow,
 
-    #[error("I/O error: {0}")]
-    IO(#[from] IoError),
+    #[cfg_attr(feature = "std", error("I/O error: {0}"))]
+    IO(#[cfg_attr(feature = "std", from)] IoError),
 
-    #[error("missing node: {0:?}")]
+    #[cfg_attr(feature = "std", error("missing node: {0:?}"))]
     MissingNode(TreeID),
 
-    #[error("unable to provide/verify proof: {0}")]
+    #[cfg_attr(feature = "std", error("unable to provide/verify proof: {0}"))]
     ProofError(&'static str),
 }

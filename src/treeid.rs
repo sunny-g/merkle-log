@@ -5,6 +5,10 @@ use crate::{maybestd::iter, util::Either};
 /// [flat-tree]: https://docs.rs/flat-tree
 #[derive(Clone, Copy, Debug, Hash, Eq, Ord, PartialEq, PartialOrd)]
 #[repr(transparent)]
+#[cfg_attr(
+    feature = "borsh",
+    derive(borsh::BorshDeserialize, borsh::BorshSerialize)
+)]
 #[cfg_attr(feature = "serde", derive(serde::Deserialize, serde::Serialize))]
 #[cfg_attr(feature = "serde", serde(transparent))]
 pub struct TreeID(u64);
@@ -778,23 +782,6 @@ impl From<u64> for TreeID {
         Self(id)
     }
 }
-
-#[cfg(feature = "borsh")]
-const _: () = {
-    use crate::maybestd::io;
-
-    impl borsh::BorshSerialize for TreeID {
-        fn serialize<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
-            self.0.serialize(writer)
-        }
-    }
-
-    impl borsh::BorshDeserialize for TreeID {
-        fn deserialize_reader<R: io::Read>(reader: &mut R) -> io::Result<Self> {
-            Ok(Self(u64::deserialize_reader(reader)?))
-        }
-    }
-};
 
 // macro_rules! derive_eq {
 //     ($type:ty) => {

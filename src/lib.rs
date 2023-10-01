@@ -3,7 +3,9 @@
 //!
 //! [Transparent Logs for Skeptical Clients]: https://research.swtch.com/tlog
 
-#[cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(not(feature = "std"), no_std)]
+extern crate alloc;
+
 mod error;
 mod treeid;
 mod util;
@@ -23,7 +25,7 @@ pub(crate) mod maybestd {
         vec::Vec,
     };
     pub use core::{iter, marker::PhantomData};
-    pub use core2::io::{self, BufRead, BufReader, Read, Write};
+    pub use core2::io::{self, BufRead, Read, Write};
 }
 
 #[cfg(feature = "std")]
@@ -31,7 +33,6 @@ pub(crate) mod maybestd {
     pub use core2::io::{self, BufRead, Read, Write};
     pub use std::{
         collections::{BTreeMap, BTreeSet},
-        io::BufReader,
         iter,
         marker::PhantomData,
         vec::Vec,
@@ -96,7 +97,7 @@ pub struct MerkleLog<D: Digest<N>, N: Node> {
     index: u64,
     /// The underlying digest used by this log.
     #[cfg_attr(feature = "serde", serde(skip))]
-    #[cfg_attr(feature = "borsh", borsh_skip)]
+    #[cfg_attr(feature = "borsh", borsh(skip))]
     _digest: PhantomData<D>,
 }
 
@@ -166,7 +167,8 @@ where
     }
 
     /// Produces the [`TreeID`]s whose values are required to produce a valid
-    /// proof for a particular entry in the log, starting from the head.
+    /// proof of inclusion for a particular leaf entry in the log, starting from
+    /// the head.
     ///
     /// ## Examples
     /// ```rust
@@ -375,7 +377,7 @@ where
         height: u8,
         in_store: &S,
     ) -> Result<N, Error> {
-        use std::cmp::Ordering::*;
+        use core::cmp::Ordering::*;
 
         let mut current_id = leaf_id;
         let mut current = *leaf_node;
@@ -456,14 +458,17 @@ mod tests {
         assert!(log.verify(0, log.head(), &proof).expect("failed to verify"));
 
         for idx in 1..=128u64 {
-            let entry = format!("hello world x{}", idx);
-            log.append(&entry, &mut store).expect(&format!(
-                "should be able to append \"{}\" at idx {}",
-                &entry, idx
-            ));
+            let mut entry = alloc::string::String::new();
+            core::fmt::write(&mut entry, format_args!("hello world x{}", idx))
+                .expect("failed to generate entry");
+
+            log.append(&entry, &mut store)
+                .expect("failed to append entry to log and store");
             assert_eq!(log.len(), idx + 1);
 
-            let proof = log.prove(idx, &store).unwrap();
+            let proof = log
+                .prove(idx, &store)
+                .expect("failed to generate inclusion proof from log and store");
             assert!(
                 log.verify(idx, log.head(), &proof)
                     .expect("failed to verify"),

@@ -1,6 +1,6 @@
 [package]
 name = "merkle-log"
-version = "0.0.8"
+version = "0.0.9"
 authors = ["sunny-g <sunny.gonna@gmail.com>"]
 description = "An implementation of the \"Merkle Tree-Structured Log\" defined in the paper \"Transparent Logs for Skeptical Clients.\" https://research.swtch.com/tlog"
 repository = "https://github.com/sunny-g/merkle-log"
@@ -13,16 +13,18 @@ rust-version = "1.60"
 
 [dependencies]
 core2 = { version = "0.4", default-features = false }
-onlyerror = { version = "0.1", default-features = false }
 
 # optional
-borsh = { version = "0.10", optional = true }
-digest = { version = "0.10", optional = true }
+borsh = { version = "1.0.0-alpha.5", default-features = false, optional = true, features = [
+  "derive"
+] }
+digest = { version = "0.10", default-features = false, optional = true }
 serde = { version = "1.0", default-features = false, optional = true, features = ["derive"] }
+thiserror = { version = "1.0", default-features = false, optional = true }
 
 [dev-dependencies]
-digest = { version = "0.10", features = ["std"] }
-merkle-log = { path = ".", features = ["std", "digest"] }
+digest = { version = "0.10", default-features = false }
+merkle-log = { path = ".", default-features = false, features = ["digest"] }
 sha2 = "0.10"
 
 [features]
@@ -31,8 +33,8 @@ std = [
   "borsh?/std",
   "core2/std",
   "digest?/std",
-  "onlyerror/std",
   "serde?/std",
+  "thiserror",
 ]
 
 [package.metadata.docs.rs]

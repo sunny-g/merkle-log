@@ -123,7 +123,7 @@ impl<N: Node> Store<N> for BTreeMap<TreeID, N> {
 ///
 pub trait Digest<N: Node>: Default {
     ///
-    fn leaf_digest<R: Read>(entry: R) -> N;
+    fn leaf_digest<R: BufRead>(entry: R) -> N;
 
     ///
     fn node_digest(left: (TreeID, &N), right: (TreeID, &N)) -> N;
@@ -142,18 +142,17 @@ mod _digest {
         D: digest::Digest + Default,
         N: Node + From<Output<D>>,
     {
-        fn leaf_digest<R: Read>(entry: R) -> N {
+        fn leaf_digest<R: BufRead>(mut entry: R) -> N {
             let mut hasher = Self::default();
-            let mut reader = BufReader::new(entry);
             loop {
-                let bytes = reader
+                let bytes = entry
                     .fill_buf()
                     .expect("should not fail to fill BufReader from an io::Read");
                 match bytes.len() {
                     0 => break,
                     len => {
                         hasher.update(bytes);
-                        reader.consume(len);
+                        entry.consume(len);
                     }
                 }
             }
